@@ -109,6 +109,14 @@ class CWReceiver:
     def __init__(self, port=UDP_PORT, enable_audio=True):
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        
+        # Increase UDP receive buffer to handle bursts
+        # Default is often 128KB, we set to 1MB
+        try:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024*1024)
+        except:
+            pass  # Ignore if not supported
+        
         self.socket.bind(('0.0.0.0', port))
         
         self.protocol = CWProtocol()
@@ -151,6 +159,14 @@ class CWReceiver:
                     expected = (self.last_sequence + 1) % 256
                     if seq != expected:
                         lost = (seq - expected) % 256
+                        
+                        # Detect sequence reset (large backward jump)
+                        # If lost > 200, likely a new transmission starting
+                        if lost > 200:
+                            print(f"\n[INFO] Sequence reset detected (new transmission)")
+                            self.last_sequence = seq
+                            continue
+                        
                         self.lost_packets += lost
                         print(f"\n[WARNING] Lost {lost} packet(s)")
                 
@@ -196,6 +212,21 @@ class CWReceiver:
         if self.packet_count > 0:
             loss_rate = (self.lost_packets / (self.packet_count + self.lost_packets)) * 100
             print(f"Packet loss rate: {loss_rate:.2f}%")
+            
+            if loss_rate > 10:
+                print(f"\n⚠️  HIGH PACKET LOSS!")
+                print("This will cause:")
+                print("  - Incorrect dit/dah timing")
+                print("  - Missing CW elements")
+                print("  - Garbled morse code")
+                print("\nSolutions:")
+                print("  - Reduce WPM speed on sender")
+                print("  - Increase UDP receive buffer")
+                print("  - Check network congestion")
+            elif loss_rate > 1:
+                print(f"\n⚠️  Moderate packet loss - may affect high-speed CW")
+            else:
+                print(f"\n✓ Excellent - minimal packet loss!")
         
         print(f"\nTotal events: {stats.get('total_events', 0)}")
         print(f"Session duration: {stats.get('duration_sec', 0):.1f}s")
