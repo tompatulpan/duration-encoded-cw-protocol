@@ -1,0 +1,11 @@
+# Python requirements for CW protocol test implementation
+
+# Optional: for audio sidetone
+pyaudio>=0.2.11
+
+# For UDP socket communication (built-in)
+# No additional packages required
+
+# Testing and development
+# numpy is required if pyaudio is used
+numpy>=1.19.0
