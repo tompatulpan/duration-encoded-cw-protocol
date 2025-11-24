@@ -130,6 +130,7 @@ class CWReceiver:
         self.last_sequence = -1
         self.packet_count = 0
         self.lost_packets = 0
+        self.last_packet_time = 0
         
         print(f"CW Receiver listening on port {port}")
         if self.sidetone:
@@ -155,22 +156,31 @@ class CWReceiver:
                 
                 # Check for lost packets
                 seq = parsed['sequence']
+                time_gap = receive_time - self.last_packet_time if self.last_packet_time > 0 else 0
+                
                 if self.last_sequence >= 0:
                     expected = (self.last_sequence + 1) % 256
                     if seq != expected:
                         lost = (seq - expected) % 256
                         
-                        # Detect sequence reset (large backward jump)
-                        # If lost > 200, likely a new transmission starting
-                        if lost > 200:
-                            print(f"\n[INFO] Sequence reset detected (new transmission)")
-                            self.last_sequence = seq
-                            continue
+                        # Detect new transmission vs packet loss:
+                        # 1. Large time gap (>2 seconds) = new transmission
+                        # 2. Sequence goes backward (lost > 128) AND small jump = new transmission
+                        # 3. Otherwise = real packet loss
                         
-                        self.lost_packets += lost
-                        print(f"\n[WARNING] Lost {lost} packet(s)")
+                        if time_gap > 2.0:
+                            # Long silence = new transmission starting
+                            print(f"\n[INFO] New transmission detected (silence: {time_gap:.1f}s)")
+                        elif lost > 128 and seq < 10:
+                            # Backward jump to low number = reset
+                            print(f"\n[INFO] Sequence reset: expected {expected}, got {seq} (new transmission)")
+                        else:
+                            # Real packet loss during active transmission
+                            self.lost_packets += lost
+                            print(f"\n[WARNING] Lost {lost} packet(s) - expected {expected}, got {seq}")
                 
                 self.last_sequence = seq
+                self.last_packet_time = receive_time
                 
                 # Process events
                 for key_down, duration_ms in parsed['events']:
