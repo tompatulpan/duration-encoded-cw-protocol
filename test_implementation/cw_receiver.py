@@ -167,6 +167,11 @@ class JitterBuffer:
         start = time.time()
         while not self.event_queue.empty() and (time.time() - start) < timeout:
             time.sleep(0.01)
+        
+        # Note: We deliberately do NOT reset last_event_end_time here
+        # This allows continuous operation without buffer delay resets
+        # Only reset state validation to allow starting fresh
+        self.expected_key_state = None
     
     def stop(self):
         """Stop playout thread"""
@@ -470,10 +475,12 @@ class CWReceiver:
                 
                 # Check for End-of-Transmission
                 if parsed.get('eot', False):
-                    print(f"\n[EOT] Transmission complete, draining buffer...")
+                    print(f"\n[EOT] Transmission complete, draining buffer...", flush=True)
                     if self.jitter_buffer:
                         self.jitter_buffer.drain_buffer(timeout=2.0)
-                    print("[EOT] Buffer drained")
+                        print("[EOT] Buffer drained and reset", flush=True)
+                    else:
+                        print("[EOT] No buffer to drain", flush=True)
                     continue
                 
                 # Process events

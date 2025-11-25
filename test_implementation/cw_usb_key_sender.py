@@ -240,6 +240,13 @@ class USBKeySender:
         self.last_key_up_time = time.time()
         self.eot_sent = False
         
+        # Adaptive EOT timeout: 14 dits (2× word spacing)
+        if mode == 'iambic':
+            dit_duration = 1200 / wpm  # ms
+            self.eot_timeout = (14 * dit_duration) / 1000.0  # seconds
+        else:
+            self.eot_timeout = 3.0  # Straight key: fixed 3 seconds
+        
         print("=" * 60)
         print(f"USB CW Key Sender - {mode.upper()} mode")
         if mode == 'iambic':
@@ -316,10 +323,10 @@ class USBKeySender:
                     self.last_key_up_time = current_time
                     self.eot_sent = False
             
-            # Send EOT after 3 seconds of silence
+            # Send EOT after adaptive timeout
             if not key_down and not self.eot_sent:
                 silence_time = current_time - self.last_key_up_time
-                if silence_time > 3.0:
+                if silence_time > self.eot_timeout:
                     eot_packet = self.protocol.create_eot_packet()
                     self.sock.sendto(eot_packet, (self.host, self.port))
                     self.eot_sent = True
@@ -345,7 +352,7 @@ class USBKeySender:
                     self.eot_sent = False
                 
                 silence_time = current_time - self.last_keyer_active
-                if silence_time > 3.0 and not self.eot_sent:
+                if silence_time > self.eot_timeout and not self.eot_sent:
                     eot_packet = self.protocol.create_eot_packet()
                     self.sock.sendto(eot_packet, (self.host, self.port))
                     self.eot_sent = True

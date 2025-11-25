@@ -2,6 +2,10 @@
 
 A lightweight, real-time protocol for transmitting Morse code timing over IP networks with sub-second latency. Inspired by DL4YHF's CW protocol with modern adaptive jitter buffering.
 
+**Design Goal:** Simple setup in Linux (or Windows) using Python's cross-platform capabilities - no complex dependencies or compilation required. Just install Python packages and run.
+
+**Note:** Currently supports audio sidetone output. Physical key-jack output (for driving remote transmitters) is not yet implemented.
+
 ## Quick Start
 
 **Send automated CW:**
@@ -232,6 +236,22 @@ test_implementation/
 └── README.md                 # This file
 ```
 
+## Platform Support
+
+**Tested on:**
+- Linux (Fedora, Ubuntu, Debian)
+- Windows (with Python 3.14+)
+
+**Requirements:**
+- Python 3.14 or later
+- `pip install pyserial pyaudio numpy`
+- USB serial adapter (for hardware keys)
+
+**Cross-Platform Notes:**
+- Serial ports: `/dev/ttyUSB0` (Linux) or `COM3` (Windows)
+- Audio works on both platforms via PyAudio
+- All scripts run unchanged across platforms
+
 ## Examples
 
 **Localhost testing with low latency:**
@@ -259,6 +279,15 @@ while true; do
   sleep 60
 done
 ```
+
+## Future Enhancements
+
+**Planned features:**
+- [ ] Physical key-jack output (drive remote transmitter via serial DTR/RTS)
+- [ ] CW decoder (timing-to-text)
+- [ ] Multi-user relay server
+- [ ] Web-based interface
+- [ ] Recording and playback
 
 ## License
 
