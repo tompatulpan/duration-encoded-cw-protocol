@@ -9,3 +9,11 @@ pyaudio>=0.2.11
 # Testing and development
 # numpy is required if pyaudio is used
 numpy>=1.19.0
+
+# For USB key interface
+pyserial>=3.5
+
+USB-Serial Adapter (DB9 or terminal block)
+├── CTS (pin 8)  ──── Dit paddle (left)
+├── DSR (pin 6)  ──── Dah paddle (right)
+└── GND (pin 5)  ──── Common ground
