@@ -67,7 +67,7 @@ class CWProtocol:
             # 8ms resolution: 128-384ms
             return 128 + 8 * (encoded - 0x60)
     
-    def create_packet(self, key_down, duration_ms):
+    def create_packet(self, key_down, duration_ms, sequence=None):
         """
         Create CW keying packet
         
@@ -90,16 +90,19 @@ class CWProtocol:
         Args:
             key_down: True if key pressed, False if released
             duration_ms: Duration since last state change
+            sequence: Optional sequence number override
             
         Returns: bytes packet
         """
         # Header
         flags = PROTOCOL_VERSION  # Version 01, all flags 0
-        seq = self.sequence_number & 0xFF
+        if sequence is not None:
+            seq = sequence & 0xFF
+        else:
+            seq = self.sequence_number & 0xFF
+            # Increment sequence number
+            self.sequence_number = (self.sequence_number + 1) % 256
         client_id = self.client_id
-        
-        # Increment sequence number
-        self.sequence_number = (self.sequence_number + 1) % 256
         
         # Payload - single event
         timing_encoded = self.encode_timing(duration_ms)
@@ -109,6 +112,26 @@ class CWProtocol:
         
         # Pack into bytes
         packet = struct.pack('BBB B', flags, seq, client_id, event_byte)
+        
+        return packet
+    
+    def create_eot_packet(self):
+        """
+        Create End-of-Transmission packet
+        
+        Special packet with Break Request flag set and no payload.
+        Signals that transmission is complete and receiver should drain buffer.
+        
+        Returns: bytes packet
+        """
+        # Set Break Request flag (bit 3)
+        flags = PROTOCOL_VERSION | 0x08  # Version 01, Break=1
+        seq = self.sequence_number & 0xFF
+        self.sequence_number = (self.sequence_number + 1) % 256
+        client_id = self.client_id
+        
+        # Pack header only (no payload for EOT)
+        packet = struct.pack('BBB', flags, seq, client_id)
         
         return packet
     
@@ -131,6 +154,9 @@ class CWProtocol:
         # Extract version (bits 7-6)
         version = (flags >> 6) & 0x03
         
+        # Check for End-of-Transmission (Break Request flag, bit 3)
+        is_eot = bool(flags & 0x08)
+        
         # Parse events (rest of packet)
         events = []
         for i in range(3, len(packet_bytes)):
@@ -144,7 +170,8 @@ class CWProtocol:
             'version': version,
             'sequence': seq,
             'client_id': client_id,
-            'events': events
+            'events': events,
+            'eot': is_eot
         }
 
 

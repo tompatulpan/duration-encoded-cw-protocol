@@ -114,6 +114,12 @@ class JitterBuffer:
             except queue.Empty:
                 continue
     
+    def drain_buffer(self, timeout=2.0):
+        """Wait for buffer to empty (called on EOT)"""
+        start = time.time()
+        while not self.event_queue.empty() and (time.time() - start) < timeout:
+            time.sleep(0.01)
+    
     def stop(self):
         """Stop playout thread"""
         self.running = False
@@ -326,6 +332,14 @@ class CWReceiver:
                 
                 self.last_sequence = seq
                 self.last_packet_time = receive_time
+                
+                # Check for End-of-Transmission
+                if parsed.get('eot', False):
+                    print(f"\n[EOT] Transmission complete, draining buffer...")
+                    if self.jitter_buffer:
+                        self.jitter_buffer.drain_buffer(timeout=2.0)
+                    print("[EOT] Buffer drained")
+                    continue
                 
                 # Process events
                 for key_down, duration_ms in parsed['events']:

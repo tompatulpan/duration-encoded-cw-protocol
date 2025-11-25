@@ -110,6 +110,10 @@ class CWAutoSender:
         for char in text:
             self.send_character(char)
         
+        # Send EOT (End-of-Transmission) marker
+        eot_packet = self.protocol.create_eot_packet()
+        self.sock.sendto(eot_packet, (self.host, self.port))
+        
         elapsed = time.time() - start_time
         print(f"\n\nSent in {elapsed:.1f}s")
         

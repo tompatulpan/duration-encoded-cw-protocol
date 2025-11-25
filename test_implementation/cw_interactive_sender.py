@@ -145,6 +145,11 @@ class CWInteractiveSender:
                 
                 # Wait for queue to drain
                 self.char_queue.join()
+                
+                # Send EOT (End-of-Transmission) marker
+                eot_packet = self.protocol.create_eot_packet()
+                self.sock.sendto(eot_packet, (self.host, self.port))
+                
                 print("[Done]")  # Signal completion
                 print("> ", end='', flush=True)  # Prompt for next line
                 
