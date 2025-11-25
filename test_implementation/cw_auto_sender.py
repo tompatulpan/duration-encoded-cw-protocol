@@ -61,16 +61,25 @@ class CWAutoSender:
         """Send a single dit or dah"""
         duration = self.dah_ms if is_dah else self.dit_ms
         
-        # Key down
+        # Send key down event
+        send_time = time.time()
         self.send_event(True, duration)
-        time.sleep(duration / 1000.0)
         
-        # Small delay to prevent UDP buffer overflow
-        time.sleep(0.001)  # 1ms safety margin
+        # Wait for the duration (simulate real-time keying)
+        elapsed = (time.time() - send_time) * 1000
+        remaining = duration - elapsed
+        if remaining > 0:
+            time.sleep(remaining / 1000.0)
         
-        # Key up (element space)
+        # Send key up event (element space)
+        send_time = time.time()
         self.send_event(False, self.element_space_ms)
-        time.sleep(self.element_space_ms / 1000.0)
+        
+        # Wait for element space duration
+        elapsed = (time.time() - send_time) * 1000
+        remaining = self.element_space_ms - elapsed
+        if remaining > 0:
+            time.sleep(remaining / 1000.0)
     
     def send_character(self, char):
         """Send a single character in morse code"""

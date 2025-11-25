@@ -44,8 +44,22 @@ class JitterBuffer:
         self.stats_shift_after_gap = 0  # Shifts after >100ms arrival gap (manual keying)
         self.stats_max_queue = 0
         
+        # State validation
+        self.expected_key_state = None  # None = first event, True = DOWN, False = UP
+        self.state_errors = 0
+        
+        # Debug mode
+        self.debug = False
+        
     def add_event(self, key_down, duration_ms, arrival_time):
         """Add event to buffer using RELATIVE timing to preserve tempo"""
+        
+        # Validate state transition (DOWN/UP must alternate)
+        if self.expected_key_state is not None and key_down == self.expected_key_state:
+            self.state_errors += 1
+            print(f"\n[ERROR] Invalid state: got {'DOWN' if key_down else 'UP'} twice in a row (error #{self.state_errors})")
+            # Don't return - try to continue anyway
+        self.expected_key_state = key_down  # This is what we just processed, expect opposite next
         
         # Reset if there's a long gap (>2 seconds) between transmissions
         if self.last_arrival and (arrival_time - self.last_arrival) > 2.0:
@@ -61,21 +75,30 @@ class JitterBuffer:
         # Each event starts when the previous event ends (preserves tempo)
         now = time.time()
         
-        if self.last_event_end_time is None:
-            # First event: schedule buffer_ms from now
-            playout_time = now + self.buffer_ms / 1000.0
-        else:
-            # Subsequent events: start when previous event finished
-            # Trust the packet timing - it already encodes correct durations
-            playout_time = self.last_event_end_time
-        
-        # Track arrival gap for statistics
+        # Track arrival gap for debug and statistics
         arrival_gap = 0
         if self.last_arrival:
             arrival_gap = arrival_time - self.last_arrival
         
+        if self.debug and arrival_gap > 0:
+            print(f"\n[DEBUG] Arrival gap: {arrival_gap*1000:.1f}ms, Duration: {duration_ms}ms, State: {'DOWN' if key_down else 'UP'}")
+        
+        if self.last_event_end_time is None:
+            # First event: schedule buffer_ms from now
+            playout_time = now + self.buffer_ms / 1000.0
+            if self.debug:
+                print(f"[DEBUG] First event: playout in {self.buffer_ms}ms")
+        else:
+            # Subsequent events: start when previous event finished
+            # Trust the packet timing - it already encodes correct durations
+            playout_time = self.last_event_end_time
+            if self.debug:
+                delay_to_playout = (playout_time - now) * 1000
+                print(f"[DEBUG] Scheduled playout: {delay_to_playout:.1f}ms from now")
+        
         # ADAPTIVE: If event would be late, shift it forward
         if playout_time < now:
+            lateness = (now - playout_time) * 1000
             # Event is late - shift forward with minimal margin
             playout_time = now + 0.01
             self.stats_shifts += 1
@@ -83,6 +106,9 @@ class JitterBuffer:
             # Track if this shift was after a long arrival gap (manual keying pattern)
             if arrival_gap > 0.1:
                 self.stats_shift_after_gap += 1
+            
+            if self.debug:
+                print(f"[DEBUG] LATE EVENT! Shifted by {lateness:.1f}ms (gap: {arrival_gap*1000:.1f}ms)")
         
         # Track headroom AFTER adaptive shift (time from NOW until playout)
         time_until_playout = playout_time - now
@@ -264,9 +290,10 @@ class SidetoneGenerator:
 
 
 class CWReceiver:
-    def __init__(self, port=UDP_PORT, enable_audio=True, jitter_buffer_ms=0):
+    def __init__(self, port=UDP_PORT, enable_audio=True, jitter_buffer_ms=0, debug=False):
         self.port = port
         self.jitter_buffer_ms = jitter_buffer_ms
+        self.debug = debug
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
         # Increase UDP receive buffer to handle bursts
@@ -290,6 +317,7 @@ class CWReceiver:
         self.jitter_buffer = None
         if jitter_buffer_ms > 0:
             self.jitter_buffer = JitterBuffer(jitter_buffer_ms)
+            self.jitter_buffer.debug = debug
         
         self.last_sequence = -1
         self.packet_count = 0
@@ -419,15 +447,19 @@ class CWReceiver:
                         
                         # Detect new transmission vs packet loss:
                         # 1. Large time gap (>2 seconds) = new transmission
-                        # 2. Sequence goes backward (lost > 128) = likely wrap-around or reset
-                        # 3. Otherwise = real packet loss
+                        # 2. Sequence goes backward (lost >= 100) = likely wrap-around or reset
+                        # 3. Small gap with sequence jump at wrap boundary = wrap-around
+                        # 4. Otherwise = real packet loss
                         
                         if time_gap > 2.0:
                             # Long silence = new transmission starting
                             print(f"\n[INFO] New transmission detected (silence: {time_gap:.1f}s)")
-                        elif lost > 128:
-                            # Backward jump = sequence wrap or reset, not real loss
-                            print(f"\n[INFO] Sequence wrap/reset: expected {expected}, got {seq}")
+                        elif lost >= 100:
+                            # Large backward jump = sequence wrap or reset, not real loss
+                            # This catches wraps like 255→0 (lost=1 in mod256, but 255 backward)
+                            # and also 128→0 (lost=128 in mod256, but is actually wrap)
+                            if self.debug:
+                                print(f"\n[DEBUG] Sequence wrap: {self.last_sequence}→{seq}")
                         else:
                             # Real packet loss during active transmission
                             self.lost_packets += lost
@@ -471,6 +503,12 @@ class CWReceiver:
         print("\n" + "=" * 60)
         print("Session Statistics:")
         print("=" * 60)
+        
+        # Show state validation errors if any
+        if self.jitter_buffer and self.jitter_buffer.state_errors > 0:
+            print(f"\n⚠️  STATE ERRORS: {self.jitter_buffer.state_errors}")
+            print("   Protocol violation - DOWN/UP events not alternating properly")
+            print("   This may indicate sender bug or packet reordering\n")
         
         stats = self.stats.get_stats()
         print(f"Total packets received: {self.packet_count}")
@@ -516,6 +554,7 @@ if __name__ == '__main__':
     parser.add_argument('--jitter-buffer', type=int, default=0, 
                        help='Jitter buffer size in ms (0=disabled, recommend 50-200 for WAN)')
     parser.add_argument('--no-audio', action='store_true', help='Disable audio sidetone')
+    parser.add_argument('--debug', action='store_true', help='Enable verbose debug output')
     
     args = parser.parse_args()
     
@@ -532,6 +571,9 @@ if __name__ == '__main__':
         print("   For internet use, try: --jitter-buffer 100")
     print()
     
+    if args.debug:
+        print("🐛 DEBUG MODE ENABLED - Verbose timing output\n")
+    
     receiver = CWReceiver(args.port, enable_audio=not args.no_audio, 
-                         jitter_buffer_ms=args.jitter_buffer)
+                         jitter_buffer_ms=args.jitter_buffer, debug=args.debug)
     receiver.run()
