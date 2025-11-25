@@ -60,12 +60,26 @@ class JitterBuffer:
         # Calculate playout time using RELATIVE timing
         # Each event starts when the previous event ends (preserves tempo)
         now = time.time()
+        
+        # Detect gap in packet arrivals (e.g., letter space in CW)
+        arrival_gap = 0
+        if self.last_arrival:
+            arrival_gap = arrival_time - self.last_arrival
+        
         if self.last_event_end_time is None:
             # First event: schedule buffer_ms from now
             playout_time = now + self.buffer_ms / 1000.0
         else:
             # Subsequent events: start when previous event finished
             playout_time = self.last_event_end_time
+            
+            # Detect letter/word spaces with 100ms threshold
+            # This works for 10-30 WPM: letter spaces are typically 150-360ms
+            # while intra-character gaps are 40-120ms
+            if arrival_gap > 0.1:
+                # Significant gap detected - this is a letter or word space
+                # Reset playout timeline to preserve the gap duration
+                playout_time = max(playout_time, now + self.buffer_ms / 1000.0)
         
         # ADAPTIVE: If event would be late, shift it forward
         if playout_time < now:
@@ -74,7 +88,7 @@ class JitterBuffer:
             self.stats_shifts += 1
             
             # Track if this shift was after a long arrival gap (manual keying pattern)
-            if self.last_arrival and (arrival_time - self.last_arrival) > 0.1:
+            if arrival_gap > 0.1:
                 self.stats_shift_after_gap += 1
         
         # Track headroom AFTER adaptive shift (time from NOW until playout)
@@ -354,12 +368,12 @@ class CWReceiver:
     
     def _process_event(self, key_down, duration_ms, seq=0):
         """Process a CW event (called directly or from jitter buffer)"""
+        # Record for statistics
+        self.stats.add_event(key_down, duration_ms)
+        
         # Update audio sidetone
         if self.sidetone:
             self.sidetone.set_key(key_down)
-        
-        # Record for statistics
-        self.stats.add_event(key_down, duration_ms)
         
         # Periodically show statistics (every 10 packets)
         if self.jitter_buffer and self.packet_count % 10 == 0:
@@ -412,15 +426,15 @@ class CWReceiver:
                         
                         # Detect new transmission vs packet loss:
                         # 1. Large time gap (>2 seconds) = new transmission
-                        # 2. Sequence goes backward (lost > 128) AND small jump = new transmission
+                        # 2. Sequence goes backward (lost > 128) = likely wrap-around or reset
                         # 3. Otherwise = real packet loss
                         
                         if time_gap > 2.0:
                             # Long silence = new transmission starting
                             print(f"\n[INFO] New transmission detected (silence: {time_gap:.1f}s)")
-                        elif lost > 128 and seq < 10:
-                            # Backward jump to low number = reset
-                            print(f"\n[INFO] Sequence reset: expected {expected}, got {seq} (new transmission)")
+                        elif lost > 128:
+                            # Backward jump = sequence wrap or reset, not real loss
+                            print(f"\n[INFO] Sequence wrap/reset: expected {expected}, got {seq}")
                         else:
                             # Real packet loss during active transmission
                             self.lost_packets += lost
