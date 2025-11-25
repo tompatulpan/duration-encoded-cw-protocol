@@ -35,17 +35,21 @@ class JitterBuffer:
         self.event_queue = queue.PriorityQueue()
         self.running = False
         self.callback = None
-        self.start_time = None
-        self.playback_time = 0  # Relative time in seconds
+        self.last_event_end_time = None  # When previous event finishes
         self.last_arrival = None
+        
+        # Statistics tracking
+        self.stats_delays = []  # Delay between playout time and arrival
+        self.stats_shifts = 0
+        self.stats_shift_after_gap = 0  # Shifts after >100ms arrival gap (manual keying)
+        self.stats_max_queue = 0
         
     def add_event(self, key_down, duration_ms, arrival_time):
         """Add event to buffer using RELATIVE timing to preserve tempo"""
         
         # Reset if there's a long gap (>2 seconds) between transmissions
         if self.last_arrival and (arrival_time - self.last_arrival) > 2.0:
-            self.start_time = None
-            self.playback_time = 0
+            self.last_event_end_time = None
             # Clear old events from queue
             while not self.event_queue.empty():
                 try:
@@ -53,30 +57,40 @@ class JitterBuffer:
                 except queue.Empty:
                     break
         
-        if self.start_time is None:
-            self.start_time = arrival_time
-            # First event plays after buffer delay
-            self.playback_time = self.buffer_ms / 1000.0
-        
         # Calculate playout time using RELATIVE timing
-        # This preserves the original tempo regardless of network jitter
-        playout_time = self.start_time + self.playback_time
-        
-        # ADAPTIVE: If event would be late, push entire timeline forward
-        # Use minimal shift to avoid "dragging" effect
+        # Each event starts when the previous event ends (preserves tempo)
         now = time.time()
+        if self.last_event_end_time is None:
+            # First event: schedule buffer_ms from now
+            playout_time = now + self.buffer_ms / 1000.0
+        else:
+            # Subsequent events: start when previous event finished
+            playout_time = self.last_event_end_time
+        
+        # ADAPTIVE: If event would be late, shift it forward
         if playout_time < now:
-            # Event is late - shift timeline forward with minimal margin
-            time_shift = now - playout_time + 0.01  # Just 10ms safety margin
-            self.start_time += time_shift
-            playout_time += time_shift
+            # Event is late - shift forward with minimal margin
+            playout_time = now + 0.01
+            self.stats_shifts += 1
+            
+            # Track if this shift was after a long arrival gap (manual keying pattern)
+            if self.last_arrival and (arrival_time - self.last_arrival) > 0.1:
+                self.stats_shift_after_gap += 1
+        
+        # Track headroom AFTER adaptive shift (time from NOW until playout)
+        time_until_playout = playout_time - now
+        self.stats_delays.append(time_until_playout * 1000.0)
         
         # Add to priority queue (sorted by playout time)
         self.event_queue.put((playout_time, key_down, duration_ms))
         
-        # Advance playback time by the event duration
-        # This maintains the original timing relationship between events
-        self.playback_time += duration_ms / 1000.0
+        # Track max queue depth
+        queue_size = self.event_queue.qsize()
+        if queue_size > self.stats_max_queue:
+            self.stats_max_queue = queue_size
+        
+        # Track when THIS event will end (for scheduling next event)
+        self.last_event_end_time = playout_time + duration_ms / 1000.0
         self.last_arrival = arrival_time
     
     def start(self, callback):
@@ -129,10 +143,32 @@ class JitterBuffer:
     
     def get_stats(self):
         """Get buffer statistics"""
-        return {
+        stats = {
             'buffer_ms': self.buffer_ms,
-            'queued_events': self.event_queue.qsize()
+            'queued_events': self.event_queue.qsize(),
+            'timeline_shifts': self.stats_shifts,
+            'timeline_shifts_after_gap': self.stats_shift_after_gap,
+            'max_queue_depth': self.stats_max_queue
         }
+        
+        if self.stats_delays:
+            # Negative delays mean packet arrived after playout time (late)
+            # Positive delays mean packet has time to spare before playout
+            stats['delay_min'] = min(self.stats_delays)
+            stats['delay_avg'] = sum(self.stats_delays) / len(self.stats_delays)
+            stats['delay_max'] = max(self.stats_delays)
+            stats['samples'] = len(self.stats_delays)
+            # Buffer headroom = how much buffer is actually being used
+            stats['buffer_used'] = self.buffer_ms - stats['delay_min']
+        
+        return stats
+    
+    def reset_stats(self):
+        """Reset statistics counters"""
+        self.stats_delays = []
+        self.stats_shifts = 0
+        self.stats_shift_after_gap = 0
+        self.stats_max_queue = 0
 
 
 class SidetoneGenerator:
@@ -252,6 +288,8 @@ class CWReceiver:
         self.packet_count = 0
         self.lost_packets = 0
         self.last_packet_time = 0
+        self.stats_update_counter = 0
+        self.last_stats_time = time.time()
         
         print(f"CW Receiver listening on port {port}")
         if self.sidetone:
@@ -260,9 +298,59 @@ class CWReceiver:
             print("Audio sidetone disabled (visual only)")
         if self.jitter_buffer:
             print(f"Jitter buffer enabled ({jitter_buffer_ms}ms) for WAN use")
+            print("Statistics will update every 10 packets")
         else:
             print("Jitter buffer disabled (LAN mode)")
         print("-" * 60)
+    
+    def _show_stats(self):
+        """Display jitter buffer statistics"""
+        if not self.jitter_buffer:
+            return
+        
+        stats = self.jitter_buffer.get_stats()
+        if 'delay_min' not in stats:
+            return
+        
+        print("\n" + "=" * 60)
+        print("NETWORK STATISTICS")
+        print("=" * 60)
+        print(f"Buffer size:      {stats['buffer_ms']}ms")
+        print(f"Buffer used:      {stats['buffer_used']:.1f}ms ({stats['buffer_used']/stats['buffer_ms']*100:.0f}%)")
+        print(f"Headroom (min):   {stats['delay_min']:.1f}ms")
+        print(f"Headroom (avg):   {stats['delay_avg']:.1f}ms")
+        print(f"Timeline shifts:  {stats['timeline_shifts']}")
+        
+        # Show shift breakdown for manual keying vs network jitter
+        gap_shifts = stats['timeline_shifts_after_gap']
+        network_shifts = stats['timeline_shifts'] - gap_shifts
+        if gap_shifts > 0:
+            print(f"  - After gaps:   {gap_shifts} (manual keying pauses)")
+        if network_shifts > 0:
+            print(f"  - Network:      {network_shifts} (actual jitter)")
+        
+        print(f"Max queue depth:  {stats['max_queue_depth']}")
+        print(f"Current queue:    {stats['queued_events']}")
+        print(f"Samples:          {stats['samples']}")
+        
+        # Smart recommendations based on shift patterns
+        network_jitter_rate = network_shifts / max(1, stats['samples'])
+        
+        if network_jitter_rate > 0.2:
+            # Frequent network-induced shifts = real jitter problem
+            print(f"\n⚠️  RECOMMENDATION: Increase buffer to {stats['buffer_ms'] + 50}ms (high network jitter)")
+        elif stats['delay_min'] < 5 and network_shifts > 0:
+            # Low headroom with network shifts = buffer too small
+            needed = stats['buffer_ms'] + 20
+            print(f"\n⚠️  RECOMMENDATION: Increase buffer to {int(needed)}ms (network jitter detected)")
+        elif stats['delay_avg'] > stats['buffer_ms'] * 0.8 and gap_shifts == stats['timeline_shifts']:
+            # High avg headroom and all shifts are from gaps = buffer oversized for manual keying
+            suggested = max(20, int(stats['buffer_used'] * 1.2))
+            print(f"\n✓ Buffer larger than needed for manual keying - try {suggested}ms")
+        else:
+            print(f"\n✓ Buffer size looks good!")
+        
+        print("=" * 60 + "\n")
     
     def _process_event(self, key_down, duration_ms, seq=0):
         """Process a CW event (called directly or from jitter buffer)"""
@@ -272,6 +360,13 @@ class CWReceiver:
         
         # Record for statistics
         self.stats.add_event(key_down, duration_ms)
+        
+        # Periodically show statistics (every 10 packets)
+        if self.jitter_buffer and self.packet_count % 10 == 0:
+            self.stats_update_counter += 1
+            if self.stats_update_counter >= 3:  # Every 30 packets
+                self._show_stats()
+                self.stats_update_counter = 0
         
         # Visual feedback
         state_str = "█" * 40 if key_down else " " * 40
