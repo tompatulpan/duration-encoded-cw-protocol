@@ -11,124 +11,171 @@ import threading
 import serial
 import serial.tools.list_ports
 from cw_protocol import CWProtocol
+try:
+    import pyaudio
+    import numpy as np
+    PYAUDIO_AVAILABLE = True
+except ImportError:
+    PYAUDIO_AVAILABLE = False
 
 class IambicKeyer:
-    """Iambic keyer logic (Mode A and Mode B)"""
+    """Iambic keyer logic (Mode A and Mode B) - Clean state machine based on n1gp/iambic-keyer"""
+    
+    # State constants
+    IDLE = 0
+    DIT = 1
+    DAH = 2
     
     def __init__(self, wpm=20, mode='B'):
         self.mode = mode  # 'A' or 'B'
-        self.wpm = wpm
+        self.set_speed(wpm)
         
-        # Calculate timing
-        self.dit_ms = 1200 / wpm
-        self.dah_ms = self.dit_ms * 3
-        self.element_space_ms = self.dit_ms
-        
-        # Keyer state
-        self.last_element = None  # 'dit' or 'dah'
-        self.dit_pending = False
-        self.dah_pending = False
+        # State
+        self.state = self.IDLE
+        self.dit_memory = False
+        self.dah_memory = False
         
     def set_speed(self, wpm):
-        """Change keyer speed"""
+        """Set keyer speed"""
         self.wpm = wpm
-        self.dit_ms = 1200 / wpm
-        self.dah_ms = self.dit_ms * 3
-        self.element_space_ms = self.dit_ms
+        self.dit_duration = 1200 / wpm  # ms
+        self.dah_duration = self.dit_duration * 3
+        self.element_space = self.dit_duration
+        self.char_space = self.dit_duration * 3
     
-    def update(self, dit_pressed, dah_pressed, send_callback):
+    def update(self, dit_paddle, dah_paddle, send_element_callback):
         """
-        Update keyer state and generate elements
+        Main keyer update - call this in a loop
         
         Args:
-            dit_pressed: bool - dit paddle pressed
-            dah_pressed: bool - dah paddle pressed
-            send_callback: function(key_down, duration_ms) - called for each element
+            dit_paddle: bool - dit paddle currently pressed
+            dah_paddle: bool - dah paddle currently pressed  
+            send_element_callback: function(key_down: bool, duration_ms: float)
         
         Returns:
-            bool - True if keyer is active (generating elements)
+            bool - True if keyer is active, False if idle
         """
-        # Check for squeeze (both paddles)
-        if dit_pressed and dah_pressed:
-            # Start squeeze sequence
-            if self.last_element == 'dah':
+        
+        # State: IDLE - waiting for paddle press
+        if self.state == self.IDLE:
+            if dit_paddle:
+                self.dit_memory = False
+                self.dah_memory = False
+                self.state = self.DIT
                 # Send dit
-                send_callback(True, self.dit_ms)
-                time.sleep(self.dit_ms / 1000.0)
-                send_callback(False, self.element_space_ms)
-                time.sleep(self.element_space_ms / 1000.0)
-                self.last_element = 'dit'
+                send_element_callback(True, self.dit_duration)
+                time.sleep(self.dit_duration / 1000.0)
+                send_element_callback(False, self.element_space)
+                time.sleep(self.element_space / 1000.0)
                 
-                # Mode B: remember dah was also pressed
-                if self.mode == 'B':
-                    self.dah_pending = True
+                # Check if dah was pressed during dit (Mode B memory)
+                if self.mode == 'B' and dah_paddle:
+                    self.dah_memory = True
+                    
+            elif dah_paddle:
+                self.dit_memory = False
+                self.dah_memory = False
+                self.state = self.DAH
+                # Send dah
+                send_element_callback(True, self.dah_duration)
+                time.sleep(self.dah_duration / 1000.0)
+                send_element_callback(False, self.element_space)
+                time.sleep(self.element_space / 1000.0)
+                
+                # Check if dit was pressed during dah (Mode B memory)
+                if self.mode == 'B' and dit_paddle:
+                    self.dit_memory = True
             else:
-                # Send dah (or start with dah if no last element)
-                send_callback(True, self.dah_ms)
-                time.sleep(self.dah_ms / 1000.0)
-                send_callback(False, self.element_space_ms)
-                time.sleep(self.element_space_ms / 1000.0)
-                self.last_element = 'dah'
+                return False  # Still idle
                 
-                # Mode B: remember dit was also pressed
-                if self.mode == 'B':
-                    self.dit_pending = True
-            
-            return True
-        
-        # Check for pending elements (Mode B only)
-        if self.mode == 'B':
-            if self.dit_pending and not dit_pressed:
-                # Send pending dit
-                send_callback(True, self.dit_ms)
-                time.sleep(self.dit_ms / 1000.0)
-                send_callback(False, self.element_space_ms)
-                time.sleep(self.element_space_ms / 1000.0)
-                self.last_element = 'dit'
-                self.dit_pending = False
-                return True
-            
-            if self.dah_pending and not dah_pressed:
-                # Send pending dah
-                send_callback(True, self.dah_ms)
-                time.sleep(self.dah_ms / 1000.0)
-                send_callback(False, self.element_space_ms)
-                time.sleep(self.element_space_ms / 1000.0)
-                self.last_element = 'dah'
-                self.dah_pending = False
-                return True
-        
-        # Single paddle
-        if dit_pressed:
-            send_callback(True, self.dit_ms)
-            time.sleep(self.dit_ms / 1000.0)
-            send_callback(False, self.element_space_ms)
-            time.sleep(self.element_space_ms / 1000.0)
-            self.last_element = 'dit'
-            return True
-        
-        if dah_pressed:
-            send_callback(True, self.dah_ms)
-            time.sleep(self.dah_ms / 1000.0)
-            send_callback(False, self.element_space_ms)
-            time.sleep(self.element_space_ms / 1000.0)
-            self.last_element = 'dah'
-            return True
-        
-        # No activity - reset state
-        if not dit_pressed and not dah_pressed:
-            self.last_element = None
-            self.dit_pending = False
-            self.dah_pending = False
-        
-        return False
+        # State: DIT - just sent a dit
+        elif self.state == self.DIT:
+            # Sample paddles during element space
+            if dit_paddle:
+                self.dit_memory = True
+            if dah_paddle:
+                self.dah_memory = True
+                
+            # Decide what's next
+            if self.dah_memory:
+                # Send dah next
+                self.dah_memory = False
+                self.state = self.DAH
+                send_element_callback(True, self.dah_duration)
+                time.sleep(self.dah_duration / 1000.0)
+                send_element_callback(False, self.element_space)
+                time.sleep(self.element_space / 1000.0)
+                
+                # Check paddle during element
+                if self.mode == 'B' and dit_paddle:
+                    self.dit_memory = True
+                    
+            elif dit_paddle or self.dit_memory:
+                # Repeat dit
+                self.dit_memory = False
+                self.state = self.DIT
+                send_element_callback(True, self.dit_duration)
+                time.sleep(self.dit_duration / 1000.0)
+                send_element_callback(False, self.element_space)
+                time.sleep(self.element_space / 1000.0)
+                
+                if self.mode == 'B' and dah_paddle:
+                    self.dah_memory = True
+            else:
+                # End of character - send extra space to complete char_space
+                # (we already sent element_space after the last element)
+                extra_space = self.char_space - self.element_space
+                time.sleep(extra_space / 1000.0)
+                self.state = self.IDLE
+                
+        # State: DAH - just sent a dah
+        elif self.state == self.DAH:
+            # Sample paddles during element space
+            if dit_paddle:
+                self.dit_memory = True
+            if dah_paddle:
+                self.dah_memory = True
+                
+            # Decide what's next
+            if self.dit_memory:
+                # Send dit next
+                self.dit_memory = False
+                self.state = self.DIT
+                send_element_callback(True, self.dit_duration)
+                time.sleep(self.dit_duration / 1000.0)
+                send_element_callback(False, self.element_space)
+                time.sleep(self.element_space / 1000.0)
+                
+                # Check paddle during element
+                if self.mode == 'B' and dah_paddle:
+                    self.dah_memory = True
+                    
+            elif dah_paddle or self.dah_memory:
+                # Repeat dah
+                self.dah_memory = False
+                self.state = self.DAH
+                send_element_callback(True, self.dah_duration)
+                time.sleep(self.dah_duration / 1000.0)
+                send_element_callback(False, self.element_space)
+                time.sleep(self.element_space / 1000.0)
+                
+                if self.mode == 'B' and dit_paddle:
+                    self.dit_memory = True
+            else:
+                # End of character - send extra space to complete char_space
+                # (we already sent element_space after the last element)
+                extra_space = self.char_space - self.element_space
+                time.sleep(extra_space / 1000.0)
+                self.state = self.IDLE
+                
+        return self.state != self.IDLE
 
 
 class USBKeySender:
     """Read CW key from USB serial port control lines"""
     
     def __init__(self, host='localhost', port=7355, serial_port='/dev/ttyUSB0', 
-                 mode='straight', wpm=20, keyer_mode='B'):
+                 mode='straight', wpm=20, keyer_mode='B', sidetone=False, sidetone_freq=600):
         """
         Initialize USB key sender
         
@@ -139,6 +186,8 @@ class USBKeySender:
             mode: 'straight', 'bug', 'iambic' (iambic includes mode A/B)
             wpm: Speed in WPM (for keyer modes)
             keyer_mode: 'A' or 'B' for iambic keyer
+            sidetone: Enable local audio sidetone
+            sidetone_freq: Sidetone frequency in Hz
         """
         self.protocol = CWProtocol()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -146,6 +195,35 @@ class USBKeySender:
         self.port = port
         self.mode = mode
         self.wpm = wpm
+        
+        # Sidetone setup
+        self.sidetone_enabled = False
+        self.sidetone_freq = sidetone_freq
+        self.audio = None
+        self.stream = None
+        self.sidetone_on = False
+        self.phase = 0.0
+        self.sidetone_error = None
+        
+        if sidetone and PYAUDIO_AVAILABLE:
+            try:
+                self.audio = pyaudio.PyAudio()
+                self.stream = self.audio.open(
+                    format=pyaudio.paFloat32,
+                    channels=1,
+                    rate=48000,
+                    output=True,
+                    frames_per_buffer=512,
+                    stream_callback=self._audio_callback
+                )
+                self.stream.start_stream()
+                self.sidetone_enabled = True
+            except Exception as e:
+                self.sidetone_error = str(e)
+                if self.audio:
+                    self.audio.terminate()
+                self.audio = None
+                self.stream = None
         
         # Open serial port
         self.serial = serial.Serial(serial_port, baudrate=9600, timeout=0)
@@ -168,6 +246,15 @@ class USBKeySender:
             print(f"Iambic Mode {keyer_mode} - {wpm} WPM")
         print(f"Serial port: {serial_port}")
         print(f"Sending to {host}:{port}")
+        if self.sidetone_enabled:
+            print(f"TX Sidetone: {self.sidetone_freq} Hz")
+        else:
+            if not PYAUDIO_AVAILABLE:
+                print("TX Sidetone: disabled (PyAudio not available)")
+            elif self.sidetone_error:
+                print(f"TX Sidetone: disabled (Error: {self.sidetone_error})")
+            else:
+                print("TX Sidetone: disabled")
         print("=" * 60)
         print("\nPin assignments:")
         if mode == 'straight':
@@ -180,6 +267,20 @@ class USBKeySender:
         print("\nPress Ctrl+C to quit")
         print("-" * 60)
     
+    def _audio_callback(self, in_data, frame_count, time_info, status):
+        """Generate sidetone audio"""
+        if self.sidetone_on:
+            # Generate sine wave
+            samples = np.arange(frame_count)
+            omega = 2.0 * np.pi * self.sidetone_freq / 48000
+            audio = 0.3 * np.sin(omega * samples + self.phase).astype(np.float32)
+            self.phase = (self.phase + omega * frame_count) % (2.0 * np.pi)
+        else:
+            # Silence
+            audio = np.zeros(frame_count, dtype=np.float32)
+        
+        return (audio.tobytes(), pyaudio.paContinue)
+    
     def send_event(self, key_down, duration_ms):
         """Send a single CW event"""
         packet = self.protocol.create_packet(
@@ -187,6 +288,10 @@ class USBKeySender:
             duration_ms=int(duration_ms)
         )
         self.sock.sendto(packet, (self.host, self.port))
+        
+        # Control sidetone
+        if self.sidetone_enabled:
+            self.sidetone_on = key_down
         
         # Visual feedback
         if key_down:
@@ -266,6 +371,10 @@ class USBKeySender:
             print("\n\nShutting down...")
         finally:
             self.running = False
+            if self.sidetone_enabled:
+                self.stream.stop_stream()
+                self.stream.close()
+                self.audio.terminate()
             self.serial.close()
             self.sock.close()
             print("73!")
@@ -293,17 +402,22 @@ def main():
         print("USB CW Key Sender")
         print("=" * 60)
         print("\nUsage:")
-        print("  python3 cw_usb_key_sender.py <host> [mode] [wpm] [serial_port]")
+        print("  python3 cw_usb_key_sender.py <host> [mode] [wpm] [serial_port] [options]")
         print("\nModes:")
         print("  straight    - Straight key (default)")
         print("  bug         - Semi-automatic bug")
         print("  iambic-a    - Iambic Mode A")
         print("  iambic-b    - Iambic Mode B (default for iambic)")
+        print("\nOptions:")
+        print("  --sidetone              - Enable TX sidetone (default)")
+        print("  --no-sidetone           - Disable TX sidetone")
+        print("  --sidetone-freq <Hz>    - Sidetone frequency (default: 600)")
         print("\nExamples:")
         print("  python3 cw_usb_key_sender.py localhost")
         print("  python3 cw_usb_key_sender.py localhost iambic-b 25")
         print("  python3 cw_usb_key_sender.py 192.168.1.100 straight")
         print("  python3 cw_usb_key_sender.py localhost iambic-b 20 /dev/ttyUSB1")
+        print("  python3 cw_usb_key_sender.py localhost iambic-b 20 /dev/ttyUSB0 --sidetone-freq 700")
         print()
         
         # List available ports
@@ -312,9 +426,20 @@ def main():
     
     # Parse arguments
     host = sys.argv[1]
-    mode_arg = sys.argv[2] if len(sys.argv) > 2 else 'straight'
-    wpm = int(sys.argv[3]) if len(sys.argv) > 3 else 20
-    serial_port = sys.argv[4] if len(sys.argv) > 4 else None
+    mode_arg = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else 'straight'
+    wpm = int(sys.argv[3]) if len(sys.argv) > 3 and not sys.argv[3].startswith('--') else 20
+    serial_port = sys.argv[4] if len(sys.argv) > 4 and not sys.argv[4].startswith('--') else None
+    
+    # Parse options
+    sidetone = True
+    sidetone_freq = 600
+    for i, arg in enumerate(sys.argv):
+        if arg == '--no-sidetone':
+            sidetone = False
+        elif arg == '--sidetone':
+            sidetone = True
+        elif arg == '--sidetone-freq' and i + 1 < len(sys.argv):
+            sidetone_freq = int(sys.argv[i + 1])
     
     # Parse mode
     if mode_arg.startswith('iambic'):
@@ -344,7 +469,9 @@ def main():
         serial_port=serial_port,
         mode=mode,
         wpm=wpm,
-        keyer_mode=keyer_mode
+        keyer_mode=keyer_mode,
+        sidetone=sidetone,
+        sidetone_freq=sidetone_freq
     )
     
     # Run
