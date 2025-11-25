@@ -57,8 +57,13 @@ class CWAutoSender:
             symbol = '▬' if duration_ms > self.dit_ms * 2 else '▪'
             print(symbol, end='', flush=True)
     
-    def send_element(self, is_dah):
-        """Send a single dit or dah"""
+    def send_element(self, is_dah, is_last_in_char=False):
+        """Send a single dit or dah
+        
+        Args:
+            is_dah: True for dah, False for dit
+            is_last_in_char: True if this is the last element in the character
+        """
         duration = self.dah_ms if is_dah else self.dit_ms
         
         # Send key down event
@@ -71,13 +76,14 @@ class CWAutoSender:
         if remaining > 0:
             time.sleep(remaining / 1000.0)
         
-        # Send key up event (element space)
+        # Send key up event - use char_space for last element, element_space otherwise
+        up_duration = self.char_space_ms if is_last_in_char else self.element_space_ms
         send_time = time.time()
-        self.send_event(False, self.element_space_ms)
+        self.send_event(False, up_duration)
         
-        # Wait for element space duration
+        # Wait for the up duration
         elapsed = (time.time() - send_time) * 1000
-        remaining = self.element_space_ms - elapsed
+        remaining = up_duration - elapsed
         if remaining > 0:
             time.sleep(remaining / 1000.0)
     
@@ -86,9 +92,15 @@ class CWAutoSender:
         char = char.upper()
         
         if char == ' ':
-            # Word space (already had char space, add remaining)
+            # Word space - send a longer UP event
+            # We already have char_space from previous char, add extra to make word_space
             extra_space = self.word_space_ms - self.char_space_ms
-            time.sleep(extra_space / 1000.0)
+            send_time = time.time()
+            self.send_event(False, extra_space)
+            elapsed = (time.time() - send_time) * 1000
+            remaining = extra_space - elapsed
+            if remaining > 0:
+                time.sleep(remaining / 1000.0)
             print('  ', end='', flush=True)
             return
         
@@ -98,16 +110,15 @@ class CWAutoSender:
         
         pattern = MORSE_CODE[char]
         
-        for element in pattern:
+        for i, element in enumerate(pattern):
+            is_last = (i == len(pattern) - 1)
             if element == '.':
-                self.send_element(False)  # Dit
+                self.send_element(False, is_last_in_char=is_last)  # Dit
             elif element == '-':
-                self.send_element(True)   # Dah
+                self.send_element(True, is_last_in_char=is_last)   # Dah
         
-        # Character space (subtract element space we just did)
-        char_space = self.char_space_ms - self.element_space_ms
-        if char_space > 0:
-            time.sleep(char_space / 1000.0)
+        # Character space is now sent by send_element() for the last element
+        # No need for additional sleep here
         print(' ', end='', flush=True)
     
     def send_text(self, text):
