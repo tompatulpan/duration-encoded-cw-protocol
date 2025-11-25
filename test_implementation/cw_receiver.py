@@ -7,6 +7,7 @@ import socket
 import sys
 import time
 import threading
+import queue
 from cw_protocol import CWProtocol, CWTimingStats, UDP_PORT
 
 # Audio support (optional)
@@ -18,6 +19,113 @@ except ImportError:
     AUDIO_AVAILABLE = False
     print("Warning: pyaudio not available, audio sidetone disabled")
     print("Install with: pip3 install pyaudio")
+
+
+class JitterBuffer:
+    """Buffer CW events to smooth out network jitter"""
+    
+    def __init__(self, buffer_ms=100):
+        """
+        Initialize jitter buffer with RELATIVE timing
+        
+        Args:
+            buffer_ms: Buffer depth in milliseconds (recommended: 50-200ms)
+        """
+        self.buffer_ms = buffer_ms
+        self.event_queue = queue.PriorityQueue()
+        self.running = False
+        self.callback = None
+        self.start_time = None
+        self.playback_time = 0  # Relative time in seconds
+        self.last_arrival = None
+        
+    def add_event(self, key_down, duration_ms, arrival_time):
+        """Add event to buffer using RELATIVE timing to preserve tempo"""
+        
+        # Reset if there's a long gap (>2 seconds) between transmissions
+        if self.last_arrival and (arrival_time - self.last_arrival) > 2.0:
+            self.start_time = None
+            self.playback_time = 0
+            # Clear old events from queue
+            while not self.event_queue.empty():
+                try:
+                    self.event_queue.get_nowait()
+                except queue.Empty:
+                    break
+        
+        if self.start_time is None:
+            self.start_time = arrival_time
+            # First event plays after buffer delay
+            self.playback_time = self.buffer_ms / 1000.0
+        
+        # Calculate playout time using RELATIVE timing
+        # This preserves the original tempo regardless of network jitter
+        playout_time = self.start_time + self.playback_time
+        
+        # ADAPTIVE: If event would be late, push entire timeline forward
+        now = time.time()
+        if playout_time < now:
+            # Event is late - shift timeline forward
+            time_shift = now - playout_time + 0.05  # Add 50ms safety margin
+            self.start_time += time_shift
+            playout_time += time_shift
+        
+        # Add to priority queue (sorted by playout time)
+        self.event_queue.put((playout_time, key_down, duration_ms))
+        
+        # Advance playback time by the event duration
+        # This maintains the original timing relationship between events
+        self.playback_time += duration_ms / 1000.0
+        self.last_arrival = arrival_time
+    
+    def start(self, callback):
+        """Start playout thread
+        
+        Args:
+            callback: function(key_down, duration_ms) called at proper time
+        """
+        self.callback = callback
+        self.running = True
+        self.thread = threading.Thread(target=self._playout_loop, daemon=True)
+        self.thread.start()
+    
+    def _playout_loop(self):
+        """Play out events at the right time"""
+        while self.running:
+            try:
+                # Get next event (non-blocking with timeout)
+                playout_time, key_down, duration_ms = self.event_queue.get(timeout=0.01)
+                
+                # Wait until playout time
+                now = time.time()
+                delay = playout_time - now
+                
+                if delay > 0:
+                    time.sleep(delay)
+                elif delay < -0.5:
+                    # Event is very late (>500ms), skip it
+                    print(f"\n[WARNING] Dropped late event (delay: {-delay*1000:.0f}ms)")
+                    continue
+                
+                # Play out event
+                if self.callback:
+                    self.callback(key_down, duration_ms)
+                
+            except queue.Empty:
+                continue
+    
+    def stop(self):
+        """Stop playout thread"""
+        self.running = False
+        if hasattr(self, 'thread'):
+            self.thread.join(timeout=1.0)
+    
+    def get_stats(self):
+        """Get buffer statistics"""
+        return {
+            'buffer_ms': self.buffer_ms,
+            'queued_events': self.event_queue.qsize()
+        }
 
 
 class SidetoneGenerator:
@@ -106,8 +214,9 @@ class SidetoneGenerator:
 
 
 class CWReceiver:
-    def __init__(self, port=UDP_PORT, enable_audio=True):
+    def __init__(self, port=UDP_PORT, enable_audio=True, jitter_buffer_ms=0):
         self.port = port
+        self.jitter_buffer_ms = jitter_buffer_ms
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         
         # Increase UDP receive buffer to handle bursts
@@ -127,6 +236,11 @@ class CWReceiver:
         if enable_audio and AUDIO_AVAILABLE:
             self.sidetone = SidetoneGenerator(frequency=700)  # 700 Hz for RX
         
+        # Jitter buffer (optional, for internet/WAN use)
+        self.jitter_buffer = None
+        if jitter_buffer_ms > 0:
+            self.jitter_buffer = JitterBuffer(jitter_buffer_ms)
+        
         self.last_sequence = -1
         self.packet_count = 0
         self.lost_packets = 0
@@ -137,10 +251,41 @@ class CWReceiver:
             print("Audio sidetone enabled (700 Hz)")
         else:
             print("Audio sidetone disabled (visual only)")
+        if self.jitter_buffer:
+            print(f"Jitter buffer enabled ({jitter_buffer_ms}ms) for WAN use")
+        else:
+            print("Jitter buffer disabled (LAN mode)")
         print("-" * 60)
+    
+    def _process_event(self, key_down, duration_ms, seq=0):
+        """Process a CW event (called directly or from jitter buffer)"""
+        # Update audio sidetone
+        if self.sidetone:
+            self.sidetone.set_key(key_down)
+        
+        # Record for statistics
+        self.stats.add_event(key_down, duration_ms)
+        
+        # Visual feedback
+        state_str = "█" * 40 if key_down else " " * 40
+        status = "DOWN" if key_down else "UP  "
+        
+        jitter_info = ""
+        if self.jitter_buffer:
+            jitter_stats = self.jitter_buffer.get_stats()
+            jitter_info = f" JBuf:{jitter_stats['queued_events']:2d}"
+        
+        print(f"\r[{state_str}] {status} {duration_ms:4d}ms | "
+              f"Seq:{seq:3d} Pkts:{self.packet_count:4d} "
+              f"Lost:{self.lost_packets:2d}{jitter_info}",
+              end='', flush=True)
     
     def run(self):
         """Main receive loop"""
+        # Start jitter buffer playout thread if enabled
+        if self.jitter_buffer:
+            self.jitter_buffer.start(lambda kd, dur: self._process_event(kd, dur))
+        
         try:
             while True:
                 # Receive packet
@@ -184,21 +329,12 @@ class CWReceiver:
                 
                 # Process events
                 for key_down, duration_ms in parsed['events']:
-                    # Update audio sidetone
-                    if self.sidetone:
-                        self.sidetone.set_key(key_down)
-                    
-                    # Record for statistics
-                    self.stats.add_event(key_down, duration_ms)
-                    
-                    # Visual feedback
-                    state_str = "█" * 40 if key_down else " " * 40
-                    status = "DOWN" if key_down else "UP  "
-                    
-                    print(f"\r[{state_str}] {status} {duration_ms:4d}ms | "
-                          f"Seq:{seq:3d} Pkts:{self.packet_count:4d} "
-                          f"Lost:{self.lost_packets:2d}",
-                          end='', flush=True)
+                    if self.jitter_buffer:
+                        # Add to jitter buffer for delayed playout
+                        self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
+                    else:
+                        # Immediate playout (LAN mode)
+                        self._process_event(key_down, duration_ms, seq)
                 
         except KeyboardInterrupt:
             print("\n\nInterrupted")
@@ -207,6 +343,9 @@ class CWReceiver:
     
     def cleanup(self):
         """Cleanup and show statistics"""
+        if self.jitter_buffer:
+            self.jitter_buffer.stop()
+        
         if self.sidetone:
             self.sidetone.close()
         
@@ -253,10 +392,29 @@ class CWReceiver:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        port = int(sys.argv[1])
-    else:
-        port = UDP_PORT
+    import argparse
     
-    receiver = CWReceiver(port)
+    parser = argparse.ArgumentParser(description='CW Protocol Receiver with Jitter Buffer')
+    parser.add_argument('--port', type=int, default=UDP_PORT, help='UDP port (default: 7355)')
+    parser.add_argument('--jitter-buffer', type=int, default=0, 
+                       help='Jitter buffer size in ms (0=disabled, recommend 50-200 for WAN)')
+    parser.add_argument('--no-audio', action='store_true', help='Disable audio sidetone')
+    
+    args = parser.parse_args()
+    
+    print("=" * 60)
+    print("CW Protocol Receiver")
+    print("=" * 60)
+    
+    if args.jitter_buffer > 0:
+        print(f"\n💡 WAN Mode: Jitter buffer enabled ({args.jitter_buffer}ms)")
+        print("   This smooths out internet latency variations")
+        print("   Note: Adds {args.jitter_buffer}ms of intentional delay")
+    else:
+        print(f"\n💡 LAN Mode: Direct playout (no buffering)")
+        print("   For internet use, try: --jitter-buffer 100")
+    print()
+    
+    receiver = CWReceiver(args.port, enable_audio=not args.no_audio, 
+                         jitter_buffer_ms=args.jitter_buffer)
     receiver.run()

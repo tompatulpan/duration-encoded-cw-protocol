@@ -835,6 +835,102 @@ setsockopt(sock, IPPROTO_IP, IP_TOS, &dscp, sizeof(dscp));
 - Audio: AF41 (34) - high priority  
 - Control: AF21 (18) - medium priority
 
+#### 6.3.3 Jitter Buffer Implementation
+
+**Purpose**: Compensate for variable network delays to provide smooth CW timing over internet connections.
+
+**When to Use**:
+- ✅ Internet/WAN connections (jitter typically 10-100ms)
+- ✅ 4G/5G mobile connections
+- ✅ Satellite links
+- ❌ Local network (LAN) - unnecessary, adds latency
+- ❌ Point-to-point links with QoS guarantees
+
+**Architecture**:
+```
+Network → [Receive Thread] → [Jitter Buffer] → [Playout Thread] → Sidetone
+                                    ↓
+                            Priority Queue
+                          (sorted by time)
+```
+
+**Implementation**:
+```python
+import queue
+import time
+import threading
+
+class JitterBuffer:
+    def __init__(self, buffer_ms=100):
+        """
+        Args:
+            buffer_ms: Buffer depth in milliseconds (50-200ms recommended)
+        """
+        self.buffer_ms = buffer_ms
+        self.event_queue = queue.PriorityQueue()
+        self.running = False
+        
+    def add_event(self, key_down, duration_ms, arrival_time):
+        """Add event with arrival timestamp"""
+        # Calculate playout time = arrival + buffer delay
+        playout_time = arrival_time + (self.buffer_ms / 1000.0)
+        
+        # Add to priority queue (sorted by playout time)
+        self.event_queue.put((playout_time, key_down, duration_ms))
+    
+    def start(self, callback):
+        """Start playout thread"""
+        self.running = True
+        self.thread = threading.Thread(target=self._playout_loop)
+        self.thread.start()
+    
+    def _playout_loop(self):
+        """Play out events at correct timing"""
+        while self.running:
+            playout_time, key_down, duration_ms = self.event_queue.get()
+            
+            # Wait until playout time
+            delay = playout_time - time.time()
+            if delay > 0:
+                time.sleep(delay)
+            elif delay < -0.5:
+                # Drop very late events (>500ms)
+                continue
+            
+            # Play event
+            self.callback(key_down, duration_ms)
+```
+
+**Buffer Size Selection**:
+| Network Type | Typical Jitter | Buffer Size | Latency Added |
+|--------------|---------------|-------------|---------------|
+| LAN | <1ms | 0ms (disabled) | 0ms |
+| Good Internet | 5-15ms | 50ms | 50ms |
+| Standard Internet | 10-30ms | **100ms** ⭐ | 100ms |
+| Poor Internet | 30-80ms | 150-200ms | 150-200ms |
+| Satellite | >100ms | 200-300ms | 200-300ms |
+
+**Adaptive Buffer** (Advanced):
+```python
+def update_buffer_size(self, jitter_stats):
+    """Dynamically adjust buffer based on measured jitter"""
+    max_jitter = jitter_stats['99th_percentile']
+    self.buffer_ms = min(max(max_jitter * 2, 50), 300)
+```
+
+**Trade-offs**:
+- **Higher buffer**: Smoother timing, but increases latency
+- **Lower buffer**: Lower latency, but more sensitive to jitter
+- **Recommendation**: Start with 100ms, adjust based on experience
+
+**Late Packet Handling**:
+- Packets arriving >500ms late are dropped
+- Prevents very late packets from disrupting smooth playout
+- Warning logged for monitoring
+
+**Test Implementation**:
+See `test_implementation/cw_receiver.py` for complete working example with configurable jitter buffer (`--jitter-buffer` option).
+
 ### 6.4 Error Handling
 
 #### 6.4.1 Packet Loss Recovery
