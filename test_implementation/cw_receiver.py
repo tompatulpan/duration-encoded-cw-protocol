@@ -61,25 +61,18 @@ class JitterBuffer:
         # Each event starts when the previous event ends (preserves tempo)
         now = time.time()
         
-        # Detect gap in packet arrivals (e.g., letter space in CW)
-        arrival_gap = 0
-        if self.last_arrival:
-            arrival_gap = arrival_time - self.last_arrival
-        
         if self.last_event_end_time is None:
             # First event: schedule buffer_ms from now
             playout_time = now + self.buffer_ms / 1000.0
         else:
             # Subsequent events: start when previous event finished
+            # Trust the packet timing - it already encodes correct durations
             playout_time = self.last_event_end_time
-            
-            # Detect letter/word spaces with 100ms threshold
-            # This works for 10-30 WPM: letter spaces are typically 150-360ms
-            # while intra-character gaps are 40-120ms
-            if arrival_gap > 0.1:
-                # Significant gap detected - this is a letter or word space
-                # Reset playout timeline to preserve the gap duration
-                playout_time = max(playout_time, now + self.buffer_ms / 1000.0)
+        
+        # Track arrival gap for statistics
+        arrival_gap = 0
+        if self.last_arrival:
+            arrival_gap = arrival_time - self.last_arrival
         
         # ADAPTIVE: If event would be late, shift it forward
         if playout_time < now:

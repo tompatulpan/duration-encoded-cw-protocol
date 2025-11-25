@@ -97,7 +97,8 @@ class CWAutoSender:
         
         # Character space (subtract element space we just did)
         char_space = self.char_space_ms - self.element_space_ms
-        time.sleep(char_space / 1000.0)
+        if char_space > 0:
+            time.sleep(char_space / 1000.0)
         print(' ', end='', flush=True)
     
     def send_text(self, text):

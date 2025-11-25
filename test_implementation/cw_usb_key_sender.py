@@ -159,6 +159,8 @@ class USBKeySender:
         self.last_dit_state = False
         self.last_dah_state = False
         self.last_change_time = time.time()
+        self.last_key_up_time = time.time()
+        self.eot_sent = False
         
         print("=" * 60)
         print(f"USB CW Key Sender - {mode.upper()} mode")
@@ -204,6 +206,19 @@ class USBKeySender:
                 
                 self.last_dit_state = key_down
                 self.last_change_time = current_time
+                
+                if not key_down:
+                    self.last_key_up_time = current_time
+                    self.eot_sent = False
+            
+            # Send EOT after 3 seconds of silence
+            if not key_down and not self.eot_sent:
+                silence_time = current_time - self.last_key_up_time
+                if silence_time > 3.0:
+                    eot_packet = self.protocol.create_eot_packet()
+                    self.sock.sendto(eot_packet, (self.host, self.port))
+                    self.eot_sent = True
+                    print(" [EOT]", flush=True)
             
             time.sleep(0.002)  # 500 Hz polling
     
@@ -213,13 +228,29 @@ class USBKeySender:
             # Read both paddles
             dit_pressed = self.serial.cts  # CTS = dit paddle
             dah_pressed = self.serial.dsr  # DSR = dah paddle
+            current_time = time.time()
             
             # Update keyer logic
             active = self.keyer.update(dit_pressed, dah_pressed, self.send_event)
             
             if not active:
+                # Track idle time and send EOT
+                if not hasattr(self, 'last_keyer_active'):
+                    self.last_keyer_active = current_time
+                    self.eot_sent = False
+                
+                silence_time = current_time - self.last_keyer_active
+                if silence_time > 3.0 and not self.eot_sent:
+                    eot_packet = self.protocol.create_eot_packet()
+                    self.sock.sendto(eot_packet, (self.host, self.port))
+                    self.eot_sent = True
+                    print(" [EOT]", flush=True)
+                
                 # Small delay when idle
                 time.sleep(0.005)  # 200 Hz when idle
+            else:
+                self.last_keyer_active = current_time
+                self.eot_sent = False
     
     def run(self):
         """Start reading key and sending events"""
