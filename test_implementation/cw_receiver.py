@@ -63,10 +63,11 @@ class JitterBuffer:
         playout_time = self.start_time + self.playback_time
         
         # ADAPTIVE: If event would be late, push entire timeline forward
+        # Use minimal shift to avoid "dragging" effect
         now = time.time()
         if playout_time < now:
-            # Event is late - shift timeline forward
-            time_shift = now - playout_time + 0.05  # Add 50ms safety margin
+            # Event is late - shift timeline forward with minimal margin
+            time_shift = now - playout_time + 0.01  # Just 10ms safety margin
             self.start_time += time_shift
             playout_time += time_shift
         
