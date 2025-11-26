@@ -1,5 +1,5 @@
 """
-Iambic Keyer Implementation - Based on n1gp/iambic-keyer
+Iambic Keyer Implementation - Based on n1gp/iambic-keyer - https://github.com/n1gp/iambic-keyer
 Clean state machine approach
 """
 import time

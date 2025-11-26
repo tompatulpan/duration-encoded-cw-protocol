@@ -132,3 +132,20 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Project-specific
+# Experimental/old code (removed FEC variants)
+exprimental_fec_RX/
+
+# Old/deprecated scripts
+test_implementation/cw_sender.py
+test_implementation/iambic_keyer_new.py
+
+# Test scripts (optional - remove # to include in git)
+#test_implementation/test_*.py
+#test_implementation/test_*.sh
+
+# Documentation drafts (optional - remove # to include in git)
+#test_implementation/Doc/
+
+*.pyc

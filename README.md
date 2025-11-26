@@ -1,10 +1,62 @@
-# CW Protocol - Real-Time Morse Code over UDP
+# Remote CW - Real-Time Morse Code over UDP
+**Status:** 🚧 In development!  
+This project is not production-ready. Features, structure, and documentation are subject to rapid change.
 
 A lightweight, real-time protocol for transmitting Morse code timing over IP networks with sub-second latency. Inspired by DL4YHF's CW protocol with modern adaptive jitter buffering.
 
 **Design Goal:** Simple setup in Linux (or Windows) using Python's cross-platform capabilities - no complex dependencies or compilation required. Just install Python packages and run.
 
 **Note:** Currently supports audio sidetone output. Physical key-jack output (for driving remote transmitters) is not yet implemented.
+
+## Installation
+
+### Linux (Fedora, Ubuntu, Debian)
+
+**Install Python and audio dependencies:**
+```bash
+# Fedora
+sudo dnf install python3 python3-pip python3-pyaudio portaudio
+
+# Ubuntu/Debian
+sudo apt install python3 python3-pip python3-pyaudio portaudio19-dev
+```
+
+**Install Python packages:**
+```bash
+pip3 install pyserial pyaudio numpy
+```
+
+**Serial port permissions (for USB keys):**
+```bash
+# Add user to dialout group
+sudo usermod -a -G dialout $USER
+
+# Or create udev rule for immediate access
+echo 'KERNEL=="ttyUSB[0-9]*", MODE="0666"' | sudo tee /etc/udev/rules.d/50-ttyusb.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# Logout/login or reboot for group membership to take effect
+```
+
+### Windows (Not tested yet)
+
+**Install Python:**
+1. Download Python 3.14+ from [python.org](https://www.python.org/downloads/)
+2. During installation, check "Add Python to PATH"
+
+**Install Python packages:**
+```cmd
+pip install pyserial pyaudio numpy
+```
+
+**Audio troubleshooting:**
+- If PyAudio install fails, download precompiled wheel from [PyAudio Windows wheels](https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio)
+- Install with: `pip install PyAudio‑0.2.14‑cp314‑cp314‑win_amd64.whl`
+
+**USB serial drivers:**
+- Most USB-to-serial adapters work automatically
+- Check Device Manager for COM port number (e.g., COM3)
+- Use this port in commands: `python cw_usb_key_sender.py localhost iambic-b 25 COM3`
 
 ## Quick Start
 
