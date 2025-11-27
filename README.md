@@ -10,7 +10,7 @@ Duration-Encoded CW (DECW) is a low-latency protocol for transmitting Morse code
 **Status:** 🚧 In development!  
 This project is not production-ready. Features, structure, and documentation are subject to rapid change.
 
-**Design Goal:** Simple setup in Linux (or Windows) using Python's cross-platform capabilities - no complex dependencies or compilation required. Just install Python packages and run.
+**Design Goal:** Simple setup in Linux (or Windows) using Python's cross-platform capabilities - no complex dependencies or compilation required. Just copy Python packages and run.
 
 **Note:** Currently supports audio sidetone output. Physical key-jack output (for driving remote transmitters) is not yet implemented.
 
@@ -53,6 +53,13 @@ This is different from offset-based protocols which encode **time since last eve
 ---
 
 ## Quick Start
+
+## Dependencies
+
+- Python 3.14+
+- pyserial (for USB key sender)
+- pyaudio (for sidetone generation)
+- numpy (for audio synthesis)
 
 ### Installation
 
@@ -414,23 +421,8 @@ The bandwidth required is very low (2-3 KB/s), so TCP’s overhead savings are n
 
 ---
 
-## Dependencies
 
-- Python 3.14+
-- pyserial (for USB key sender)
-- pyaudio (for sidetone generation)
-- numpy (for audio synthesis)
 
-## File Structure
-
-```
-test_implementation/
-├── cw_protocol.py           # Core protocol encoder/decoder
-├── cw_auto_sender.py         # Automated text-to-CW sender
-├── cw_interactive_sender.py  # Interactive line-by-line sender
-├── cw_usb_key_sender.py      # Hardware key/paddle interface
-├── cw_receiver.py            # Receiver with jitter buffer
-└── README.md                 # This file
 ```
 
 ## Platform Support
@@ -451,38 +443,8 @@ DECW is written in Python and runs on any platform with Python 3.14+:
 - PyAudio via Homebrew
 - Serial ports: `/dev/cu.usbserial-*`
 
-**Design Goal:** Simple setup with minimal dependencies. No compilation required - just Python and a few packages.
 
-## Examples
-
-### Example 1: Local Testing
-```bash
-# Terminal 1: Start receiver
-python3 cw_receiver.py
-
-# Terminal 2: Send a message
-python3 cw_auto_sender.py localhost 20 "CQ CQ DE SM0ONR K"
 ```
-
-### Example 2: WAN Connection
-```bash
-# Remote station (receiver)
-python3 cw_receiver.py --buffer 200
-
-# Local station (sender with hardware key)
-python3 cw_usb_key_sender.py remote.example.com iambic-b 25 /dev/ttyUSB0 --sidetone-freq 700
-```
-
-### Example 3: Training Setup
-```bash
-# Trainer sends practice text
-python3 cw_interactive_sender.py localhost 15
-
-# Student listens without sidetone (receive-only)
-python3 cw_receiver.py --buffer 50
-```
-
-## Future Enhancements
 
 ## Future Possibilities
 
@@ -501,19 +463,13 @@ Ideas for future development (not yet implemented):
    - Relay server for CW "roundtables"
    - 3+ operators in same QSO
 
-## License
-
-Public domain / MIT - Use as you wish.
-
-## Contributors
-
-Implementation: 2025
 
 Inspired by:
 - Protocol concept: Thomas Sailer (DL4YHF)
 - Iambic keyer reference: Steve Haynal (n1gp/iambic-keyer)
 
+
 Happy CW operating!  
 73 de SM0ONR
 
-Questions? Issues? PRs welcome!
+
