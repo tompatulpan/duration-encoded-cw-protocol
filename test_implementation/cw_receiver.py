@@ -59,7 +59,7 @@ class JitterBuffer:
             self.state_errors += 1
             print(f"\n[ERROR] Invalid state: got {'DOWN' if key_down else 'UP'} twice in a row (error #{self.state_errors})")
             # Don't return - try to continue anyway
-        self.expected_key_state = key_down  # This is what we just processed, expect opposite next
+        self.expected_key_state = key_down  # Track last state seen
         
         # Reset if there's a long gap (>2 seconds) between transmissions
         if self.last_arrival and (arrival_time - self.last_arrival) > 2.0:
@@ -190,13 +190,14 @@ class JitterBuffer:
         }
         
         if self.stats_delays:
-            # Negative delays mean packet arrived after playout time (late)
-            # Positive delays mean packet has time to spare before playout
+            # delays = time from packet arrival until scheduled playout
+            # Positive = packet has headroom, negative = packet arrived late
+            # Note: avg can exceed buffer_ms when events queue up (later arrivals wait longer)
             stats['delay_min'] = min(self.stats_delays)
             stats['delay_avg'] = sum(self.stats_delays) / len(self.stats_delays)
             stats['delay_max'] = max(self.stats_delays)
             stats['samples'] = len(self.stats_delays)
-            # Buffer headroom = how much buffer is actually being used
+            # Buffer utilization based on minimum headroom (closest we came to underrun)
             stats['buffer_used'] = self.buffer_ms - stats['delay_min']
         
         return stats
@@ -356,9 +357,10 @@ class CWReceiver:
         print("NETWORK STATISTICS")
         print("=" * 60)
         print(f"Buffer size:      {stats['buffer_ms']}ms")
-        print(f"Buffer used:      {stats['buffer_used']:.1f}ms ({stats['buffer_used']/stats['buffer_ms']*100:.0f}%)")
-        print(f"Headroom (min):   {stats['delay_min']:.1f}ms")
-        print(f"Headroom (avg):   {stats['delay_avg']:.1f}ms")
+        print(f"Max delay seen:   {stats['buffer_used']:.1f}ms ({stats['buffer_used']/stats['buffer_ms']*100:.0f}% of buffer)")
+        print(f"Min delay seen:   {stats['delay_min']:.1f}ms")
+        # Note: avg delay can exceed buffer size when events queue up (later events wait longer)
+        print(f"Avg delay:        {stats['delay_avg']:.1f}ms (arrival-to-playout)")
         print(f"Timeline shifts:  {stats['timeline_shifts']}")
         
         # Show shift breakdown for manual keying vs network jitter
@@ -373,22 +375,29 @@ class CWReceiver:
         print(f"Current queue:    {stats['queued_events']}")
         print(f"Samples:          {stats['samples']}")
         
-        # Smart recommendations based on shift patterns
+        # Smart recommendations based on actual buffer usage and jitter patterns
+        usage_percent = (stats['buffer_used'] / stats['buffer_ms']) * 100
         network_jitter_rate = network_shifts / max(1, stats['samples'])
+        avg_delay_percent = (stats['delay_avg'] / stats['buffer_ms']) * 100
         
         if network_jitter_rate > 0.2:
-            # Frequent network-induced shifts = real jitter problem
+            # Frequent network-induced shifts (>20% of packets) = real jitter problem
             print(f"\n⚠️  RECOMMENDATION: Increase buffer to {stats['buffer_ms'] + 50}ms (high network jitter)")
-        elif stats['delay_min'] < 5 and network_shifts > 0:
-            # Low headroom with network shifts = buffer too small
+        elif usage_percent >= 98 and avg_delay_percent > 50:
+            # Hitting ceiling (98%+) AND high average delay (>50%) = sustained high jitter
             needed = stats['buffer_ms'] + 20
-            print(f"\n⚠️  RECOMMENDATION: Increase buffer to {int(needed)}ms (network jitter detected)")
-        elif stats['delay_avg'] > stats['buffer_ms'] * 0.8 and gap_shifts == stats['timeline_shifts']:
-            # High avg headroom and all shifts are from gaps = buffer oversized for manual keying
-            suggested = max(20, int(stats['buffer_used'] * 1.2))
-            print(f"\n✓ Buffer larger than needed for manual keying - try {suggested}ms")
+            print(f"\n⚠️  RECOMMENDATION: Increase buffer to {int(needed)}ms (sustained high delays)")
+        elif usage_percent < 60 and gap_shifts == stats['timeline_shifts']:
+            # Low usage and all shifts are from gaps = buffer oversized for manual keying
+            suggested = max(20, int(stats['buffer_used'] * 1.3))
+            print(f"\n✓ Buffer larger than needed - could reduce to ~{suggested}ms")
         else:
-            print(f"\n✓ Buffer size looks good!")
+            # Buffer is adequate
+            if avg_delay_percent < 30:
+                # Very low average delay = buffer much larger than needed
+                print(f"\n✓ Buffer size excellent (avg delay only {avg_delay_percent:.0f}% of buffer)")
+            else:
+                print(f"\n✓ Buffer size looks good!")
         
         print("=" * 60 + "\n")
     
@@ -485,6 +494,10 @@ class CWReceiver:
                 
                 # Process events
                 for key_down, duration_ms in parsed['events']:
+                    # Debug: show what packet was actually received (enable with --debug-packets)
+                    if hasattr(self, 'debug_packets') and self.debug_packets:
+                        print(f"\n[RX] Seq:{seq} {'DOWN' if key_down else 'UP  '} {duration_ms:3d}ms", flush=True)
+                    
                     if self.jitter_buffer:
                         # Add to jitter buffer for delayed playout
                         self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
@@ -562,6 +575,7 @@ if __name__ == '__main__':
                        help='Jitter buffer size in ms (0=disabled, recommend 50-200 for WAN)')
     parser.add_argument('--no-audio', action='store_true', help='Disable audio sidetone')
     parser.add_argument('--debug', action='store_true', help='Enable verbose debug output')
+    parser.add_argument('--debug-packets', action='store_true', help='Show every received packet')
     
     args = parser.parse_args()
     
@@ -572,7 +586,7 @@ if __name__ == '__main__':
     if args.jitter_buffer > 0:
         print(f"\n💡 WAN Mode: Jitter buffer enabled ({args.jitter_buffer}ms)")
         print("   This smooths out internet latency variations")
-        print("   Note: Adds {args.jitter_buffer}ms of intentional delay")
+        print(f"   Note: Adds {args.jitter_buffer}ms of intentional delay")
     else:
         print(f"\n💡 LAN Mode: Direct playout (no buffering)")
         print("   For internet use, try: --jitter-buffer 100")
@@ -583,4 +597,7 @@ if __name__ == '__main__':
     
     receiver = CWReceiver(args.port, enable_audio=not args.no_audio, 
                          jitter_buffer_ms=args.jitter_buffer, debug=args.debug)
+    receiver.debug_packets = args.debug_packets
+    if args.debug_packets:
+        print("📦 PACKET DEBUG ENABLED - Showing all received packets\n")
     receiver.run()

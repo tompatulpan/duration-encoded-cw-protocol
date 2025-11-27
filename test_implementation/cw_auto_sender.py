@@ -92,15 +92,11 @@ class CWAutoSender:
         char = char.upper()
         
         if char == ' ':
-            # Word space - send a longer UP event
-            # We already have char_space from previous char, add extra to make word_space
+            # Word space - just sleep the extra time beyond char_space
+            # The previous character already sent char_space in its last UP packet
+            # We only need to add the difference to make it a full word_space
             extra_space = self.word_space_ms - self.char_space_ms
-            send_time = time.time()
-            self.send_event(False, extra_space)
-            elapsed = (time.time() - send_time) * 1000
-            remaining = extra_space - elapsed
-            if remaining > 0:
-                time.sleep(remaining / 1000.0)
+            time.sleep(extra_space / 1000.0)
             print('  ', end='', flush=True)
             return
         
