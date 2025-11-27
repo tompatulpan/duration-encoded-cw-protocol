@@ -5,33 +5,32 @@ This is a test implementation of the Duration-Encoded CW (DECW) protocol over UD
 ## Key Differences from Original DL4YHF Protocol
 
 ### Original DL4YHF (Remote CW Keyer):
-1. **Transport**: Uses TCP with multiplexed bytestreams
+1. **Transport**: Uses TCP
 2. **Timing Encoding**: Non-linear compression (0-1165ms range)
    ```
    0x00-0x1F: Direct 0-31ms (1ms resolution)
    0x20-0x3F: 32 + 4*(value-0x20) ms (4ms resolution)  
    0x40-0x7F: 157 + 16*(value-0x40) ms (16ms resolution, max 1165ms)
    ```
-3. **Protocol**: Custom binary multiplexing for CW + audio + control over single TCP socket
-4. **Context**: Windows-based, integrated with serial ports and audio
+3. **Packet Format**: 1 byte per event (state in bit 7, duration in bits 0-6)
+4. **Context**: Part of complete remote station system (Windows-based)
 
-### Our Test Implementation:
-1. **Transport**: Pure UDP for minimal latency testing
-2. **Timing Encoding**: Optimized for typical CW speeds (0-384ms range)
+### Our Implementation (DECW):
+1. **Transport**: Uses UDP
+2. **Timing Encoding**: Direct encoding optimized for common CW speeds
    ```
-   0x00-0x3F: Direct 0-63ms (1ms resolution) - covers 15-60 WPM
-   0x40-0x5F: 64 + 2*(value-64) ms (2ms resolution, 64-126ms)
-   0x60-0x7F: 128 + 8*(value-96) ms (8ms resolution, 128-384ms)
+   0-255ms direct (1ms resolution)
    ```
-3. **Protocol**: Simplified with 3-byte header + payload
-4. **Context**: Cross-platform, terminal-based testing
+3. **Packet Format**: 3 bytes per event (sequence, state, duration as separate fields)
+4. **Context**: Standalone CW protocol (cross-platform, terminal-based)
 
 ### Why the Changes?
 
 **Better resolution for common speeds**: 
 - Most CW operation is 15-30 WPM (40-80ms dit length)
 - Our 0-63ms direct encoding covers this perfectly with 1ms resolution
-- DL4YHF's direct encoding only goes to 31ms (good for >38 WPM)
+- DL4YHF uses variable resolution: 1ms (0-31ms), 4ms (32-126ms), 16ms (128-1165ms)
+- Both approaches work well, but DECW's simpler encoding is easier to implement
 
 **Simpler UDP packets**:
 - Each UDP packet is independent (no TCP stream multiplexing)

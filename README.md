@@ -185,6 +185,74 @@ python3 cw_usb_key_sender.py localhost iambic-b 25 /dev/ttyUSB0 --sidetone-freq 
 python3 cw_usb_key_sender.py localhost iambic-b 25 /dev/ttyUSB0 --no-sidetone
 ```
 
+### Raspberry Pi GPIO Output
+
+For driving physical transmitter keying circuits or relays on Raspberry Pi:
+
+**Installation on Raspberry Pi:**
+```bash
+# RPi.GPIO is usually pre-installed on Raspberry Pi OS
+# If needed, install with:
+sudo apt install python3-rpi.gpio
+# or: pip3 install RPi.GPIO
+```
+
+**Basic Usage:**
+```bash
+# Default: GPIO pin 17, active-high, 100ms jitter buffer
+python3 cw_gpio_output.py
+
+# Custom GPIO pin (BCM numbering)
+python3 cw_gpio_output.py --pin 23
+
+# For WAN/Internet use with larger buffer
+python3 cw_gpio_output.py --buffer 200
+
+# Active-low output (for some relay modules)
+python3 cw_gpio_output.py --active-low
+
+# Debug mode (show packet details and timing)
+python3 cw_gpio_output.py --debug
+
+# Show statistics every 10 seconds
+python3 cw_gpio_output.py --stats
+
+# Combine options
+python3 cw_gpio_output.py --pin 23 --buffer 150 --active-low --debug --stats
+```
+
+**Hardware Connection:**
+```
+Raspberry Pi GPIO → Relay Module or Transistor → Transmitter Key Input
+
+Simple transistor circuit:
+GPIO Pin (e.g., 17) ──→ 1kΩ resistor ──→ NPN transistor base
+                                         ├─ Collector → TX key input
+                                         └─ Emitter → GND
+
+For relay modules:
+GPIO Pin → Relay IN
+5V → Relay VCC
+GND → Relay GND
+```
+
+**Pin Numbering:**
+- Uses BCM (Broadcom) numbering scheme
+- GPIO 17 = Physical pin 11
+- GPIO 23 = Physical pin 16
+- See [pinout.xyz](https://pinout.xyz) for complete pinout
+
+**Jitter Buffer Recommendations:**
+- Local network: 50-100ms
+- Internet/WAN: 150-200ms
+- Adjust based on network conditions
+
+**Safety Notes:**
+- GPIO pins output 3.3V @ max 16mA
+- Use transistor/relay for driving transmitters
+- Never connect GPIO directly to transmitter key input
+- Add flyback diode across relay coils
+
 ## Technical Specification
 
 ### Packet Format
@@ -416,22 +484,22 @@ python3 cw_receiver.py --buffer 50
 
 ## Future Enhancements
 
-### Planned Features
+## Future Possibilities
 
-1. **Physical Key-Jack Output**
+Ideas for future development (not yet implemented):
+
+1. **Physical Key-Jack Output (ongoing)**
    - Drive relay/keying circuit for transmitter
    - Convert received CW to hardware keying
-   - Complete remote station control
+   
+2. **Forward Error Correction**
+   - Send redundant packets (2-3x)
+   - Recover from packet loss
+   - Trade-off: 100-200% bandwidth increase (still <1 Kbps total)
 
-2. **Web-Based Receiver (Experimental)**
-   - Browser-based listening via WebSocket relay
-   - No native UDP support (requires relay server)
-   - Optional chat/spotting features
-
-3. **Multi-Operator Relay Server**
-   - Bridge UDP and WebSocket clients
-   - Support CW "roundtables" with 3+ operators
-   - Room/channel management
+3. **Multi-Operator Support**
+   - Relay server for CW "roundtables"
+   - 3+ operators in same QSO
 
 ## License
 
