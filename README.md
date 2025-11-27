@@ -80,7 +80,7 @@ sudo usermod -a -G dialout $USER
 # Then log out and back in
 ```
 
-**Windows (Not tested):**
+**Windows (untested but should work):**
 ```bash
 # Install Python 3.14+ from python.org
 # Then install dependencies:
@@ -103,7 +103,7 @@ pip install PyAudio‑0.2.11‑cp314‑cp314‑win_amd64.whl
 python3 cw_receiver.py
 
 # Send automated text (in another terminal)
-python3 cw_auto_sender.py localhost "CQ CQ CQ DE SM0ONR" 20
+python3 cw_auto_sender.py localhost 20 "CQ CQ CQ DE SM0ONR"
 
 # Interactive line-by-line sender
 python3 cw_interactive_sender.py localhost 25
@@ -342,7 +342,7 @@ Despite the high overhead ratio, UDP is the correct choice because CW is a **rea
 - Manual correction by operator (natural for CW operating)
 - Better than TCP's complete playback stall
 
-The bandwidth is so low (2-3 KB/s) that TCP's overhead savings are meaningless, but TCP's latency penalty is **unacceptable** for real-time audio.
+The bandwidth required is very low (2-3 KB/s), so TCP’s overhead savings are not significant, but its latency penalty makes it unsuitable for real-time audio.
 
 ---
 
@@ -374,7 +374,7 @@ DECW is written in Python and runs on any platform with Python 3.14+:
 - Serial ports: `/dev/ttyUSB0`, `/dev/ttyACM0`
 - Recommended for production use
 
-**✅ Windows** (7, 8, 10, 11)
+**✅ Windows** (untested but should work)
 - PyAudio via precompiled wheels
 - Serial ports: `COM3`, `COM4`, etc.
 - Full feature parity with Linux
@@ -393,7 +393,7 @@ DECW is written in Python and runs on any platform with Python 3.14+:
 python3 cw_receiver.py
 
 # Terminal 2: Send a message
-python3 cw_auto_sender.py localhost "CQ CQ DE SM0ONR K" 20
+python3 cw_auto_sender.py localhost 20 "CQ CQ DE SM0ONR K"
 ```
 
 ### Example 2: WAN Connection
@@ -423,20 +423,15 @@ python3 cw_receiver.py --buffer 50
    - Convert received CW to hardware keying
    - Complete remote station control
 
-2. **Multi-Operator Relay Server**
-   - Support CW "jam" sessions with 3+ operators
+2. **Web-Based Receiver (Experimental)**
+   - Browser-based listening via WebSocket relay
+   - No native UDP support (requires relay server)
+   - Optional chat/spotting features
+
+3. **Multi-Operator Relay Server**
+   - Bridge UDP and WebSocket clients
+   - Support CW "roundtables" with 3+ operators
    - Room/channel management
-   - Optional callsign identification
-
-3. **Recording & Playback**
-   - Save QSO sessions
-   - Replay for training
-   - Export to audio/text
-
-4. **Web Interface**
-   - Browser-based receiver (WebRTC)
-   - Real-time operator list
-   - Chat/spotting integration
 
 ## License
 
@@ -449,8 +444,6 @@ Implementation: 2025
 Inspired by:
 - Protocol concept: Thomas Sailer (DL4YHF)
 - Iambic keyer reference: Steve Haynal (n1gp/iambic-keyer)
-
-## 73!
 
 Happy CW operating!  
 73 de SM0ONR
