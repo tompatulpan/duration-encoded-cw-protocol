@@ -152,3 +152,11 @@ test_implementation/iambic_keyer_new.py
 COMPARISON_NOTES.md
 
 .pyc
+# Temporary specification file
+CW_PROTOCOL_SPECIFICATION.md
+
+# Kate editor swap files
+*.kate-swp
+
+# Documentation folder (work in progress)
+DOC/
