@@ -148,4 +148,7 @@ test_implementation/iambic_keyer_new.py
 # Documentation drafts (optional - remove # to include in git)
 #test_implementation/Doc/
 
+# Internal comparison notes (not for public repo)
+COMPARISON_NOTES.md
+
 .pyc

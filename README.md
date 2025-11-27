@@ -20,7 +20,7 @@ This project is not production-ready. Features, structure, and documentation are
 
 - ✅ **3-byte binary protocol** - Minimal overhead
 - ✅ **Duration-encoded timing** - Each packet is self-contained
-- ✅ **Adaptive jitter buffer** - Handles variable network latency (50-200ms)
+- ✅ **Adaptive jitter buffer** - Handles variable network latency
 - ✅ **Hardware key support** - Straight keys, bugs, iambic paddles (Mode A/B)
 - ✅ **Zero-latency TX sidetone** - Hear yourself as you key
 - ✅ **State validation** - Detects protocol errors
@@ -37,7 +37,7 @@ DECW packets contain the **exact duration** each event should last:
 [seq=5][UP][180ms] = "Key up for exactly 180 milliseconds"
 ```
 
-This is different from offset-based protocols (like netcw) which encode **time since last event**:
+This is different from offset-based protocols which encode **time since last event**:
 
 ```
 [seq=5][UP][60ms] = "Key went up 60ms after the previous event"
@@ -80,7 +80,7 @@ sudo usermod -a -G dialout $USER
 # Then log out and back in
 ```
 
-**Windows:**
+**Windows (Not tested):**
 ```bash
 # Install Python 3.14+ from python.org
 # Then install dependencies:
@@ -103,7 +103,7 @@ pip install PyAudio‑0.2.11‑cp314‑cp314‑win_amd64.whl
 python3 cw_receiver.py
 
 # Send automated text (in another terminal)
-python3 cw_auto_sender.py localhost "CQ CQ CQ DE W1XYZ" 20
+python3 cw_auto_sender.py localhost "CQ CQ CQ DE SM0ONR" 20
 
 # Interactive line-by-line sender
 python3 cw_interactive_sender.py localhost 25
@@ -346,87 +346,6 @@ The bandwidth is so low (2-3 KB/s) that TCP's overhead savings are meaningless, 
 
 ---
 
-## Comparison to netcw (W8BSD)
-
-Both DECW and netcw transmit **binary key events** over UDP for low-latency CW.
-
-### Packet Format Comparison
-
-| Feature | DECW (This Protocol) | netcw |
-|---------|---------------------|-------|
-| **Packet size** | 3 bytes | 4 bytes |
-| **Format** | `[seq][state][duration_ms]` | `[seq][event][time_msb][time_lsb]` |
-| **Timing model** | Absolute duration | Relative time offset |
-| **Byte order** | Native | Network (big-endian) |
-| **Character spacing** | Explicit (long UP packet) | Implicit (silence) |
-| **Status packets** | No | Yes (types 2,3,4 for sync) |
-
-### Timing Model Difference
-
-**DECW (Duration-Encoded):**
-```
-[DOWN][60ms] = "Key down for 60 milliseconds"
-[UP][180ms] = "Key up for 180 milliseconds (character space)"
-
-Each packet is self-contained.
-```
-
-**netcw (Offset-Encoded):**
-```
-[DOWN][0ms] = "Key down NOW"
-[UP][60ms] = "Key up 60ms after previous event"
-
-Requires timeline reconstruction from offsets.
-```
-
-### Robustness on Jittery Networks
-
-**DECW is more robust** because:
-
-| Scenario | DECW | netcw |
-|----------|------|-------|
-| **Jitter tolerance** | ✅ Duration preserved in packet | ⚠️ Requires timeline reconstruction |
-| **Packet loss** | ✅ Self-contained events | ❌ Breaks timing chain |
-| **Out-of-order packets** | ✅ Sequence sorts it out | ❌ Offset calculation fails |
-| **Late packets** | ✅ Buffer handles it | ⚠️ Must recalculate timeline |
-| **Receiver complexity** | ✅ Simple: schedule for X ms | ⚠️ Complex: calculate when to start |
-| **Accumulated delay** | ✅ Less (direct scheduling) | ⚠️ More (timeline reconstruction) |
-
-**Example: Packet Loss Recovery**
-
-```
-DECW:
-[seq=0][DOWN][60ms]  ← Arrives
-[seq=1][UP][60ms]    ← LOST!
-[seq=2][DOWN][60ms]  ← Arrives
-→ State validation detects error: [ERROR] Invalid state: got DOWN twice in a row (error #1)
-→ Receiver plays both DOWNs with correct durations
-→ Gap between them is wrong, but element timing preserved
-
-netcw:
-[seq=0][DOWN][0ms]   ← Arrives at T=0
-[seq=1][UP][60ms]    ← LOST!
-[seq=2][DOWN][60ms]  ← Arrives at T=120
-→ Receiver doesn't know when UP should have occurred
-→ Timeline reconstruction fails completely
-```
-
-### When to Use Each
-
-**Use DECW for:**
-- Real-time QSOs over WAN/internet
-- Hardware key operation (straight, bug, iambic)
-- Networks with variable latency or packet loss
-- Training/contesting with authentic timing
-- Preserving operator's "fist" characteristics
-
-**Use netcw for:**
-- Low-jitter LANs
-- When status sync is needed (types 2,3,4)
-- Established netcw infrastructure
-
----
-
 ## Dependencies
 
 - Python 3.14+
@@ -474,7 +393,7 @@ DECW is written in Python and runs on any platform with Python 3.14+:
 python3 cw_receiver.py
 
 # Terminal 2: Send a message
-python3 cw_auto_sender.py localhost "CQ CQ DE W1XYZ K" 20
+python3 cw_auto_sender.py localhost "CQ CQ DE SM0ONR K" 20
 ```
 
 ### Example 2: WAN Connection
