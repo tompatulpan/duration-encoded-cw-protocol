@@ -423,37 +423,39 @@ The bandwidth required is very low (2-3 KB/s), so TCP’s overhead savings are n
 
 
 
-```
-
-## Platform Support
-
-DECW is written in Python and runs on any platform with Python 3.14+:
-
-**✅ Linux** (Fedora, Ubuntu, Debian, Arch, etc.)
-- Native PyAudio/PortAudio support
-- Serial ports: `/dev/ttyUSB0`, `/dev/ttyACM0`
-- Recommended for production use
-
-**✅ Windows** (untested but should work)
-- PyAudio via precompiled wheels
-- Serial ports: `COM3`, `COM4`, etc.
-- Full feature parity with Linux
-
-**✅ macOS** (untested but should work)
-- PyAudio via Homebrew
-- Serial ports: `/dev/cu.usbserial-*`
-
-
-```
-
 ## Future Possibilities
 
 Ideas for future development (not yet implemented):
 
-1. **Physical Key-Jack Output (ongoing)**
-   - Drive relay/keying circuit for transmitter
-   - Convert received CW to hardware keying
+1. **USB HID Paddle Interface (Recommended Alternative)**
    
+   Cleaner alternative to USB serial adapters using Arduino as USB keyboard:
+   
+   ```
+   Morse Paddle → Arduino (HID firmware) → USB → PC keyboard events
+
+   ```
+   
+   **Advantages over serial adapters:**
+   - No drivers needed (standard USB keyboard)
+   - No serial port permissions required
+   - Lower latency (<1ms vs 1-10ms)
+   - Cross-platform consistency
+   - Plug-and-play operation
+   
+   **Implementation:**
+   - Arduino with ATmega32U4 chip (native USB support): https://docs.arduino.cc/hardware/micro/
+   - Firmware: https://gitlab.com/dawszy-arduino-projects/usb-hid-cw-paddle
+   - Python: Use `pynput` library (no root needed)
+   - New script: `cw_hid_key_sender.py`
+   
+   **Signal flow:**
+   ```
+   Serial: Paddle → USB-Serial → /dev/ttyUSB0 → pyserial → cw_usb_key_sender.py
+   HID: Paddle → Arduino HID → F13/F14 keys → pynput → cw_hid_key_sender.py
+   ```
+
+
 2. **Forward Error Correction**
    - Send redundant packets (2-3x)
    - Recover from packet loss
