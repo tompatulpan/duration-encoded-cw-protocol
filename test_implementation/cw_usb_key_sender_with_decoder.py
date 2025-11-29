@@ -40,7 +40,17 @@ class MorseDecoder:
         '-.-.--': '!', '-..-.': '/', '-.--.': '(', '-.--.-': ')',
         '.-...': '&', '---...': ':', '-.-.-.': ';', '-...-': '=',
         '.-.-.': '+', '-....-': '-', '..--.-': '_', '.-..-.': '"',
-        '...-..-': '$', '.--.-.': '@', '...---...': 'SOS'
+        '...-..-': '$', '.--.-.': '@', 
+        
+        # Prosigns (procedural signals)
+        '...---...': '<SOS>',   # Distress signal
+        '.-.-.': '<AR>',        # End of message
+        '-...-.-': '<BT>',      # New paragraph/pause
+        '........': '<HH>',     # Error correction
+        '-.--.': '<KN>',        # Invite specific station
+        '...-.-': '<SK>',       # End of contact
+        '-.-.-': '<KA>',        # Start of transmission
+        '-.-.-': '<CT>'         # Start of transmission (alternate)
     }
     
     def __init__(self, wpm=20):
@@ -610,10 +620,10 @@ def list_serial_ports():
 
 def main():
     if len(sys.argv) < 2:
-        print("USB CW Key Sender")
+        print("USB CW Key Sender with Decoder")
         print("=" * 60)
         print("\nUsage:")
-        print("  python3 cw_usb_key_sender.py <host> [mode] [wpm] [serial_port] [options]")
+        print("  python3 cw_usb_key_sender_with_decoder.py <host> [mode] [wpm] [serial_port] [options]")
         print("\nModes:")
         print("  straight    - Straight key (default)")
         print("  bug         - Semi-automatic bug")
@@ -626,11 +636,11 @@ def main():
         print("  --no-sidetone           - Disable TX sidetone")
         print("  --sidetone-freq <Hz>    - Sidetone frequency (default: 600)")
         print("\nExamples:")
-        print("  python3 cw_usb_key_sender.py localhost")
-        print("  python3 cw_usb_key_sender.py localhost iambic-b 25")
-        print("  python3 cw_usb_key_sender.py 192.168.1.100 straight --no-decode")
-        print("  python3 cw_usb_key_sender.py localhost iambic-b 20 /dev/ttyUSB1")
-        print("  python3 cw_usb_key_sender.py localhost iambic-b 20 /dev/ttyUSB0 --sidetone-freq 700")
+        print("  python3 cw_usb_key_sender_with_decoder.py localhost")
+        print("  python3 cw_usb_key_sender_with_decoder.py localhost iambic-b 25")
+        print("  python3 cw_usb_key_sender_with_decoder.py 192.168.1.100 straight --no-decode")
+        print("  python3 cw_usb_key_sender_with_decoder.py localhost iambic-b 20 /dev/ttyUSB1")
+        print("  python3 cw_usb_key_sender_with_decoder.py localhost iambic-b 20 /dev/ttyUSB0 --sidetone-freq 700")
         print()
         
         # List available ports
