@@ -117,6 +117,9 @@ python3 cw_interactive_sender.py localhost 25
 
 # Hardware key (USB serial adapter on /dev/ttyUSB0 or COM3)
 python3 cw_usb_key_sender.py localhost iambic-b 25 /dev/ttyUSB0
+
+# Hardware key with text-decoder
+python3 cw_usb_key_sender_with_decoder.py localhost iambic-b 25 /dev/ttyUSB0
 ```
 
 ### Common Options
