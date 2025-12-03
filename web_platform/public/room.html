@@ -124,6 +124,14 @@
                 </div>
 
                 <div class="setting-group">
+                    <h3>Jitter Buffer</h3>
+                    <label for="jitterBufferSize">Buffer Size:</label>
+                    <input type="range" id="jitterBufferSize" min="100" max="500" value="300" step="50">
+                    <span id="jitterBufferValue">300 ms</span>
+                    <p class="setting-hint">Adjust if you hear audio glitches or want lower latency</p>
+                </div>
+
+                <div class="setting-group">
                     <h3>Display</h3>
                     <label>
                         <input type="checkbox" id="showTimestamps" checked>
@@ -211,6 +219,7 @@
     </div>
 
     <!-- Scripts -->
+    <script src="js/jitter-buffer.js"></script>
     <script src="js/cw-decoder.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/webrtc.js"></script>

@@ -64,23 +64,23 @@
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
-                    <h3>Enter Your Callsign</h3>
-                    <p>Use your amateur radio callsign or a practice call</p>
+                    <h3>Connect</h3>
+                    <p>Enter your callsign and join a room - microphone access required</p>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
-                    <h3>Join a Room</h3>
-                    <p>Click "Join Room" - your browser will request microphone access</p>
+                    <h3>Key CW</h3>
+                    <p>Send Morse via audio input from your keyer or paddle</p>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
-                    <h3>Key Your CW</h3>
-                    <p>Use an external key connected to audio input, or keyboard (coming soon)</p>
+                    <h3>Hear & Decode</h3>
+                    <p>Real-time audio + automatic text decoding from all operators</p>
                 </div>
                 <div class="step">
                     <div class="step-number">4</div>
-                    <h3>See Decoded Text</h3>
-                    <p>Watch real-time Morse decoding from all operators in the room</p>
+                    <h3>Practice Together</h3>
+                    <p>Improve your CW skills with operators worldwide</p>
                 </div>
             </div>
         </section>
@@ -90,53 +90,56 @@
             <h2>✨ Features</h2>
             <div class="feature-grid">
                 <div class="feature">
-                    <div class="icon">🎧</div>
-                    <h3>Low Latency Audio</h3>
-                    <p>WebRTC peer-to-peer for ~70-100ms latency</p>
+                    <div class="icon">⚡</div>
+                    <h3>Ultra-Low Latency</h3>
+                    <p>WebRTC P2P delivers 70-100ms latency - like real QSO conditions</p>
                 </div>
                 <div class="feature">
-                    <div class="icon">🔍</div>
-                    <h3>Real-time Decoding</h3>
-                    <p>Automatic Morse code to text conversion</p>
+                    <div class="icon">🎯</div>
+                    <h3>Adaptive Decoding</h3>
+                    <p>Smart decoder adapts to your speed (12-35 WPM) automatically</p>
                 </div>
                 <div class="feature">
                     <div class="icon">🆓</div>
-                    <h3>Completely Free</h3>
-                    <p>No registration, no ads, no tracking</p>
+                    <h3>Zero Cost</h3>
+                    <p>Free forever. No registration, no ads, no tracking</p>
                 </div>
                 <div class="feature">
                     <div class="icon">🌍</div>
-                    <h3>Global Access</h3>
-                    <p>Practice with operators from anywhere</p>
+                    <h3>Worldwide Practice</h3>
+                    <p>Connect with CW operators from any continent, any time</p>
                 </div>
                 <div class="feature">
                     <div class="icon">📱</div>
-                    <h3>Works Everywhere</h3>
-                    <p>Desktop, tablet, mobile - any modern browser</p>
+                    <h3>Cross-Platform</h3>
+                    <p>Browser-based - works on desktop, tablet, mobile</p>
                 </div>
                 <div class="feature">
                     <div class="icon">🔒</div>
-                    <h3>Private & Secure</h3>
-                    <p>End-to-end encrypted audio (SRTP)</p>
+                    <h3>End-to-End Encrypted</h3>
+                    <p>SRTP audio encryption keeps your practice private</p>
                 </div>
             </div>
         </section>
 
         <!-- Setup for Native Clients -->
         <section class="native-setup">
-            <h2>🔌 Using Native CW Gear?</h2>
-            <p>Connect your USB iambic paddle or straight key:</p>
+            <h2>🔌 Using Real CW Gear?</h2>
+            <p>Connect your USB paddle, iambic keyer, or straight key with our native Python client:</p>
             <div class="code-block">
                 <pre><code># Install dependencies
 pip3 install pyaudio numpy pyserial
 
-# Run the sender (routes CW to this platform)
-python3 cw_usb_key_sender.py ROOM_ID iambic-b 25 /dev/ttyUSB0
+# Run the sender (auto-detects your keying style)
+python3 cw_usb_key_sender.py main iambic-b 25 /dev/ttyUSB0
 
-# Example: Join "main" room at 25 WPM
-python3 cw_usb_key_sender.py wss://cw-practice.pages.dev/ws iambic-b 25 /dev/ttyUSB0</code></pre>
+# The client handles:
+# - Iambic A/B keying logic
+# - Adaptive timing (12-35 WPM)
+# - Audio sidetone generation
+# - Network buffering & jitter compensation</code></pre>
             </div>
-            <p><a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">📦 Get the native client code</a></p>
+            <p><a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">📦 Download native client from GitHub</a></p>
         </section>
 
         <!-- Active Rooms -->
@@ -147,32 +150,63 @@ python3 cw_usb_key_sender.py wss://cw-practice.pages.dev/ws iambic-b 25 /dev/tty
             </div>
         </section>
 
+        <!-- Technical Details -->
+        <section class="tech-specs">
+            <h2>⚙️ Technical Specs</h2>
+            <div class="spec-grid">
+                <div class="spec">
+                    <h4>Audio Quality</h4>
+                    <p>48kHz sampling • Opus codec • <strong>70-100ms latency</strong></p>
+                </div>
+                <div class="spec">
+                    <h4>Jitter Buffer</h4>
+                    <p>300ms adaptive buffer • Smooth network variations</p>
+                </div>
+                <div class="spec">
+                    <h4>Decoder Engine</h4>
+                    <p>Exponential smoothing • <strong>Auto-adapts to 12-35 WPM</strong></p>
+                </div>
+                <div class="spec">
+                    <h4>Network Protocol</h4>
+                    <p>WebRTC mesh P2P • Duration-encoded CW events</p>
+                </div>
+                <div class="spec">
+                    <h4>Security</h4>
+                    <p>DTLS-SRTP encryption • No central server decryption</p>
+                </div>
+                <div class="spec">
+                    <h4>Scaling</h4>
+                    <p>2-8 operators per room (mesh) • Cloudflare Durable Objects signaling</p>
+                </div>
+            </div>
+        </section>
+
         <!-- FAQ -->
         <section class="faq">
             <h2>❓ FAQ</h2>
             <details>
                 <summary>What equipment do I need?</summary>
-                <p>Just a modern web browser and microphone! You can key CW by feeding audio from an electronic keyer, or use our keyboard interface (coming soon). For best results, connect a USB iambic paddle with our native client.</p>
+                <p>Just a modern web browser and microphone access. Key CW by routing audio from your electronic keyer into your microphone input. For the best experience, use our Python client with a USB paddle or straight key.</p>
             </details>
             <details>
-                <summary>How many operators can join?</summary>
-                <p>Currently 2-8 operators per room works best (mesh topology). We're working on scaling to larger groups.</p>
+                <summary>How does the adaptive decoder work?</summary>
+                <p>The decoder uses exponential smoothing to track dit duration from the shortest tones it receives. It automatically adapts to speed changes (12-35 WPM) within 3-5 characters, and adds proper inter-element spacing for accurate playback.</p>
             </details>
             <details>
-                <summary>What's the latency like?</summary>
-                <p>Typically 70-140ms depending on your location. This is about the same as HF radio propagation delay for moderate distances.</p>
+                <summary>Why is there latency?</summary>
+                <p>The 300ms jitter buffer smooths out network timing variations, ensuring clean CW without clicks or gaps. Total latency (70-100ms network + 300ms buffer) is comparable to HF propagation delays, so it feels natural for radio operators.</p>
             </details>
             <details>
-                <summary>Do I need to register?</summary>
-                <p>Nope! Just enter your callsign and join. We don't store any personal information.</p>
+                <summary>Can I use this for official QSOs?</summary>
+                <p>This is a practice platform, not a licensed amateur radio service. Use it to improve your CW skills, then take those skills to the air!</p>
             </details>
             <details>
                 <summary>Can I create private rooms?</summary>
-                <p>Yes! Just enter any unique room name. Share it with your friends to practice together.</p>
+                <p>Absolutely! Enter any unique room name when joining. Share the room name with your friends for private practice sessions.</p>
             </details>
             <details>
                 <summary>Is this open source?</summary>
-                <p>Yes! Check out <a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">the GitHub repository</a>.</p>
+                <p>Yes! MIT licensed. Check out <a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">the GitHub repository</a> for the full source code, protocol documentation, and technical deep-dives.</p>
             </details>
         </section>
     </main>

@@ -134,7 +134,12 @@ class CWStudioClient:
         """Connect to CW Studio WebSocket server"""
         print(f"Connecting to {self.server_url}...")
         try:
-            self.ws = await websockets.connect(self.server_url)
+            # Disable built-in ping/pong timeout - we handle keepalive manually
+            self.ws = await websockets.connect(
+                self.server_url,
+                ping_interval=None,  # Disable automatic pings
+                ping_timeout=None    # Disable ping timeout
+            )
             
             # Send join message
             join_msg = {
@@ -266,15 +271,38 @@ class CWStudioClient:
                 print(f"\n✗ Polling error: {e}")
                 break
     
+    async def keepalive_ping(self):
+        """Send periodic keepalive messages (Cloudflare requires data, not just pings)"""
+        while True:
+            try:
+                await asyncio.sleep(15)  # Send keepalive every 15 seconds
+                if self.ws:
+                    # Send a keepalive message (Cloudflare Workers need actual data)
+                    keepalive_msg = {
+                        'type': 'keepalive',
+                        'peerId': self.peer_id,
+                        'timestamp': int(time.time() * 1000)
+                    }
+                    await self.ws.send(json.dumps(keepalive_msg))
+            except Exception as e:
+                # Silently continue - don't break the connection on keepalive errors
+                pass
+    
     async def run(self):
         """Main run loop"""
         await self.connect()
         
+        # Start keepalive ping task
+        ping_task = asyncio.create_task(self.keepalive_ping())
+        
         # Start polling based on mode
-        if self.mode == 'iambic':
-            await self.poll_iambic()
-        else:  # straight key
-            await self.poll_straight()
+        try:
+            if self.mode == 'iambic':
+                await self.poll_iambic()
+            else:  # straight key
+                await self.poll_straight()
+        finally:
+            ping_task.cancel()
     
     def cleanup(self):
         """Cleanup resources"""

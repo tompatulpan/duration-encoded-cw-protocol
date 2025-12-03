@@ -44,8 +44,8 @@ class MorseDecoder {
         
         // Timing thresholds (in milliseconds)
         this.dit_threshold = this.dit_duration * 1.5;  // < 1.5 dits = dit
-        this.char_space = this.dit_duration * 3;       // 3 dit spaces = character boundary
-        this.word_space = this.dit_duration * 7;       // 7 dit spaces = word boundary
+        this.char_space = this.dit_duration * 3.5;     // ~3.5 dit spaces = character boundary
+        this.word_space = this.dit_duration * 7;       // ~7 dit spaces = word boundary
         
         // Statistics
         this.char_count = 0;

@@ -130,12 +130,10 @@ export class SignalingRoom {
                 break;
                 
             case 'cw_event':
-                console.log(`CW event from ${state.callsign}: ${message.event} ${message.duration}ms, broadcasting to ${this.peers.size} peers (including sender)`);
+                console.log(`CW event from ${state.callsign}: ${message.event} ${message.duration}ms, broadcasting to ${this.peers.size - 1} other peers`);
                 
-                // Echo back to sender as acknowledgment
-                this.send(ws, { type: 'cw_event_ack', event: message.event });
-                
-                // Broadcast to ALL peers (including sender for sidetone)
+                // Broadcast to OTHER peers only (exclude sender to avoid duplicate)
+                // Sender already hears their own sidetone locally
                 this.broadcast({
                     type: 'cw_event',
                     peerId: state.peerId,
@@ -143,7 +141,12 @@ export class SignalingRoom {
                     event: message.event,
                     duration: message.duration,
                     timestamp: message.timestamp
-                }, null);  // null = don't exclude anyone
+                }, state.peerId);  // Exclude sender
+                break;
+                
+            case 'keepalive':
+                // Respond to keepalive to prevent Cloudflare timeout
+                // No need to broadcast, just acknowledge
                 break;
                 
             case 'ping':

@@ -159,53 +159,82 @@ class AudioHandler {
     /**
      * Play a tone for a specific duration (for remote CW playback)
      * @param {number} duration - Duration in milliseconds
+     * @param {number} scheduledTime - Scheduled playout time in seconds (from Date.now() clock)
      */
-    playSidetoneDuration(duration) {
+    playSidetoneDuration(duration, scheduledTime = null) {
         if (!this.audioContext || !this.sidetoneGain) {
+            console.log('[Audio] No context or gain');
             return;
         }
         
         if (this.audioContext.state !== 'running') {
+            console.log('[Audio] Context not running');
             return;
         }
         
         if (duration <= 0) {
+            console.log('[Audio] Invalid duration:', duration);
             return;
         }
         
-        // Stop any existing oscillator
-        if (this.sidetoneOsc) {
-            try {
-                this.sidetoneOsc.stop();
-                this.sidetoneOsc.disconnect();
-            } catch (e) {
-                // Ignore
-            }
-            this.sidetoneOsc = null;
-        }
-        
-        // Create oscillator
+        // Create oscillator (each event gets its own oscillator)
         const osc = this.audioContext.createOscillator();
         osc.type = 'sine';
         osc.frequency.value = this.sidetoneFreq;
         
-        // Set gain
+        // Create dedicated gain node for this tone with attack/release envelope
+        const toneGain = this.audioContext.createGain();
+        toneGain.gain.value = 0;  // Start at zero
+        
+        // Connect: oscillator -> toneGain -> sidetoneGain -> destination
+        osc.connect(toneGain);
+        toneGain.connect(this.sidetoneGain);
+        
+        // Set master volume
         this.sidetoneGain.gain.value = this.sidetoneVolume;
         
-        // Connect
-        osc.connect(this.sidetoneGain);
-        
-        // Schedule start and stop
+        // Convert scheduled time to audio context time
         const now = this.audioContext.currentTime;
-        const stopTime = now + (duration / 1000);
+        const nowWallClock = Date.now() / 1000;  // Current wall clock time in seconds
         
-        osc.start(now);
+        let startTime;
+        if (scheduledTime !== null) {
+            // Calculate audio context time equivalent of the scheduled playout time
+            const deltaFromNow = scheduledTime - nowWallClock;
+            startTime = Math.max(now, now + deltaFromNow);
+            
+            console.log(`[Audio] Scheduled: ${scheduledTime.toFixed(3)}, nowWall=${nowWallClock.toFixed(3)}, delta=${deltaFromNow.toFixed(3)}, audioNow=${now.toFixed(3)}, startTime=${startTime.toFixed(3)}`);
+        } else {
+            // Fallback: play immediately (for own transmissions)
+            startTime = now;
+        }
+        
+        const stopTime = startTime + (duration / 1000);
+        
+        // Apply attack/release envelope to prevent clicks (5ms ramps)
+        const attackTime = 0.005;  // 5ms attack
+        const releaseTime = 0.005; // 5ms release
+        
+        // Attack: ramp from 0 to 1
+        toneGain.gain.setValueAtTime(0, startTime);
+        toneGain.gain.linearRampToValueAtTime(1, startTime + attackTime);
+        
+        // Sustain at full volume
+        toneGain.gain.setValueAtTime(1, stopTime - releaseTime);
+        
+        // Release: ramp from 1 to 0
+        toneGain.gain.linearRampToValueAtTime(0, stopTime);
+        
+        console.log(`[Audio] Playing ${duration}ms tone with envelope: start=${startTime.toFixed(3)}, stop=${stopTime.toFixed(3)}`);
+        
+        osc.start(startTime);
         osc.stop(stopTime);
         
         // Clean up after it's done
         osc.onended = () => {
             try {
                 osc.disconnect();
+                console.log('[Audio] Tone ended, oscillator cleaned up');
             } catch (e) {
                 // Already disconnected
             }

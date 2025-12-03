@@ -70,8 +70,8 @@ class MorseDecoder:
         
         # Timing thresholds (in milliseconds)
         self.dit_threshold = self.dit_duration * 1.5  # < 1.5 dits = dit
-        self.char_space = self.dit_duration * 2.5     # ~2.5 dit spaces = character boundary
-        self.word_space = self.dit_duration * 10      # ~10 dit spaces = word boundary (need longer for manual keying)
+        self.char_space = self.dit_duration * 3.5     # ~3.5 dit spaces = character boundary
+        self.word_space = self.dit_duration * 7       # ~7 dit spaces = word boundary
     
     def add_element(self, duration_ms):
         """
@@ -203,7 +203,7 @@ class IambicKeyer:
                 # Send dit
                 send_element_callback(True, self.dit_duration)
                 time.sleep(self.dit_duration / 1000.0)
-                send_element_callback(False, self.element_space)
+                send_element_callback(False, self.dit_duration)
                 time.sleep(self.element_space / 1000.0)
                 
                 # Check if dah was pressed during dit (Mode B memory)
@@ -217,7 +217,7 @@ class IambicKeyer:
                 # Send dah
                 send_element_callback(True, self.dah_duration)
                 time.sleep(self.dah_duration / 1000.0)
-                send_element_callback(False, self.element_space)
+                send_element_callback(False, self.dah_duration)
                 time.sleep(self.element_space / 1000.0)
                 
                 # Check if dit was pressed during dah (Mode B memory)
@@ -241,7 +241,7 @@ class IambicKeyer:
                 self.state = self.DAH
                 send_element_callback(True, self.dah_duration)
                 time.sleep(self.dah_duration / 1000.0)
-                send_element_callback(False, self.element_space)
+                send_element_callback(False, self.dah_duration)
                 time.sleep(self.element_space / 1000.0)
                 
                 # Check paddle during element
@@ -254,7 +254,7 @@ class IambicKeyer:
                 self.state = self.DIT
                 send_element_callback(True, self.dit_duration)
                 time.sleep(self.dit_duration / 1000.0)
-                send_element_callback(False, self.element_space)
+                send_element_callback(False, self.dit_duration)
                 time.sleep(self.element_space / 1000.0)
                 
                 if self.mode == 'B' and dah_paddle:
@@ -281,7 +281,7 @@ class IambicKeyer:
                 self.state = self.DIT
                 send_element_callback(True, self.dit_duration)
                 time.sleep(self.dit_duration / 1000.0)
-                send_element_callback(False, self.element_space)
+                send_element_callback(False, self.dit_duration)
                 time.sleep(self.element_space / 1000.0)
                 
                 # Check paddle during element
@@ -294,7 +294,7 @@ class IambicKeyer:
                 self.state = self.DAH
                 send_element_callback(True, self.dah_duration)
                 time.sleep(self.dah_duration / 1000.0)
-                send_element_callback(False, self.element_space)
+                send_element_callback(False, self.dah_duration)
                 time.sleep(self.element_space / 1000.0)
                 
                 if self.mode == 'B' and dit_paddle:

@@ -9,7 +9,7 @@ class RoomController {
         this.myCallsign = null;
         this.webrtc = null;
         this.audio = null;
-        this.decoders = new Map();  // peerId -> MorseDecoder
+        this.decoders = new Map();  // peerId -> {decoder: MorseDecoder, jitterBuffer: JitterBuffer, ...}
         this.myDecoder = null;
         
         // UI state
@@ -26,6 +26,9 @@ class RoomController {
         // Silence tracking for decoder
         this.lastToneEnd = Date.now();
         this.silenceCheckInterval = null;
+        
+        // Jitter buffer settings
+        this.jitterBufferMs = 300;  // 300ms buffer for smooth playout with network jitter
     }
 
     /**
@@ -215,24 +218,52 @@ class RoomController {
      * Handle CW event from remote sender (Python client)
      */
     async _handleRemoteCWEvent(peerId, callsign, event, duration) {
-        // console.log('🔊 Remote CW:', callsign, event, duration, 'ms'); // Uncomment for debugging
+        // Skip audio playback for own transmissions (avoid delayed echo)
+        // Match by callsign since Python client has different peerId
+        const isOwnTransmission = (callsign === this.myCallsign);
         
         // Visual feedback
         document.title = event === 'tone_start' ? '▄ CW Studio' : 'CW Studio';
         
-        // Get or create decoder for this sender
+        // Get or create decoder and jitter buffer for this sender
         if (!this.decoders.has(peerId)) {
-            console.log('Creating new decoder for', callsign);
-            this.decoders.set(peerId, {
-                decoder: new MorseDecoder(20),
-                lastToneEnd: 0
+            console.log(`Creating new decoder and jitter buffer for ${callsign} (buffer: ${this.jitterBufferMs}ms)`);
+            
+            const decoder = new MorseDecoder(20);
+            const jitterBuffer = new JitterBuffer(this.jitterBufferMs);
+            
+            // Start jitter buffer with callback to play audio and decode
+            jitterBuffer.start((keyDown, durationMs, scheduledTime) => {
+                // Only play audio for key-down events
+                if (keyDown && this.sidetoneEnabled) {
+                    this.audio.playSidetoneDuration(durationMs, scheduledTime);
+                }
+                
+                // Decode on key-down events
+                if (keyDown && this.autoDecodeEnabled && durationMs > 0) {
+                    decoder.addElement(durationMs);
+                    const decoderData = this.decoders.get(peerId);
+                    if (decoderData) {
+                        decoderData.lastToneEnd = Date.now();
+                    }
+                }
             });
+            
+            this.decoders.set(peerId, {
+                decoder: decoder,
+                jitterBuffer: jitterBuffer,
+                lastToneEnd: 0,
+                callsign: callsign
+            });
+            
             // Add this sender to operators list
             this._addOperatorToList(peerId, callsign);
             this._updateOperatorStatus(peerId, 'connected');
         }
+        
         const decoderData = this.decoders.get(peerId);
         const decoder = decoderData.decoder;
+        const jitterBuffer = decoderData.jitterBuffer;
         
         if (event === 'tone_start') {
             // Don't do anything on tone_start - wait for tone_end with duration
@@ -245,31 +276,24 @@ class RoomController {
                 console.warn('⚠️ AudioContext suspended - click anywhere on the page to enable audio');
             }
         } else if (event === 'tone_end') {
-            // Play the tone NOW for its duration (events arrive after the real tone)
-            if (this.sidetoneEnabled && duration > 0) {
-                this.audio.playSidetoneDuration(duration);
-            }
-            
-            // Decode the element
-            if (this.autoDecodeEnabled && duration > 0) {
-                decoder.addElement(duration);
-                decoderData.lastToneEnd = Date.now();
-                console.log('Added element to decoder, duration:', duration);
-                
-                // Check for character/word spacing after a brief delay
-                setTimeout(() => {
-                    const silenceDuration = Date.now() - decoderData.lastToneEnd;
-                    const result = decoder.checkSpacing(silenceDuration);
-                    if (result.character) {
-                        console.log('Decoded character:', result.character);
-                        this._appendDecodedText(callsign, result.character, result.type === 'word');
-                        
-                        // Update WPM estimate
-                        const wpm = decoder.estimateWPM();
-                        document.getElementById('wpmEstimate').textContent = `${wpm} WPM`;
-                        console.log('Estimated WPM:', wpm);
+            // Add tone_end event to jitter buffer (for other operators) or decode directly (for own transmission)
+            if (duration > 0) {
+                console.log(`[Routing] ${callsign} tone_end: isOwnTx=${isOwnTransmission}, myCall=${this.myCallsign}, duration=${duration}ms`);
+                if (!isOwnTransmission) {
+                    // Other operators: use jitter buffer for smooth playback
+                    // Only add tone_end (key-down) with duration - tone_start is not needed for duration-based protocol
+                    const arrivalTime = Date.now() / 1000;  // seconds
+                    jitterBuffer.addEvent(true, duration, arrivalTime);  // key-down event with duration
+                } else {
+                    // Own transmission: decode directly without buffering
+                    if (this.autoDecodeEnabled) {
+                        this.myDecoder.addElement(duration);
+                        this.lastToneEnd = Date.now();
                     }
-                }, 200);
+                }
+                
+                // Store callsign for continuous checking
+                decoderData.callsign = callsign;
             }
         }
     }
@@ -278,17 +302,28 @@ class RoomController {
      * Check for character/word spacing during silence
      */
     _checkSilence() {
-        if (!this.myDecoder || !this.autoDecodeEnabled) return;
+        if (!this.autoDecodeEnabled) return;
         
-        const silenceDuration = Date.now() - this.lastToneEnd;
-        const result = this.myDecoder.checkSpacing(silenceDuration);
-        
-        if (result.character) {
-            this._appendDecodedText(this.myCallsign, result.character, result.type === 'word');
+        // Check all decoders for spacing
+        for (const [peerId, decoderData] of this.decoders.entries()) {
+            if (!decoderData.lastToneEnd || decoderData.lastToneEnd === 0) continue;
             
-            // Update WPM estimate
-            const wpm = this.myDecoder.estimateWPM();
-            document.getElementById('wpmEstimate').textContent = `${wpm} WPM`;
+            const silenceDuration = Date.now() - decoderData.lastToneEnd;
+            
+            // Skip if silence is very short (< 50ms)
+            if (silenceDuration < 50) continue;
+            
+            const result = decoderData.decoder.checkSpacing(silenceDuration);
+            
+            if (result && result.character) {
+                const callsign = decoderData.callsign || 'Unknown';
+                console.log(`[Spacing] ${result.type} boundary detected: '${result.character}' from ${callsign} (silence: ${silenceDuration}ms)`);
+                this._appendDecodedText(callsign, result.character, result.type === 'word');
+                
+                // Update WPM estimate
+                const wpm = decoderData.decoder.estimateWPM();
+                document.getElementById('wpmEstimate').textContent = `${wpm} WPM`;
+            }
         }
     }
 
@@ -307,8 +342,8 @@ class RoomController {
     _handlePeerJoined(peerId, callsign) {
         console.log(`Peer joined: ${callsign}`);
         
-        // Create decoder for this peer
-        this.decoders.set(peerId, new MorseDecoder(20));
+        // Don't create decoder here - it will be created in _handleRemoteCWEvent
+        // when the first CW event arrives (with proper jitter buffer setup)
         
         // Add to operators list
         this._addOperatorToList(peerId, callsign);
@@ -495,28 +530,45 @@ class RoomController {
         const banner = document.getElementById('audioActivationBanner');
         
         const resumeAudio = async () => {
-            if (this.audio.audioContext && this.audio.audioContext.state === 'suspended') {
-                try {
-                    await this.audio.audioContext.resume();
-                    console.log('✅ AudioContext resumed after user interaction');
-                    // Hide the banner
+            if (this.audio.audioContext) {
+                const stateBefore = this.audio.audioContext.state;
+                console.log('🔊 Attempting to resume AudioContext, state:', stateBefore);
+                
+                if (stateBefore === 'suspended') {
+                    try {
+                        await this.audio.audioContext.resume();
+                        console.log('✅ AudioContext resumed:', this.audio.audioContext.state);
+                        // Hide the banner
+                        if (banner) {
+                            banner.style.display = 'none';
+                        }
+                    } catch (err) {
+                        console.error('❌ Failed to resume AudioContext:', err);
+                    }
+                } else {
+                    console.log('ℹ️ AudioContext already running');
                     if (banner) {
                         banner.style.display = 'none';
                     }
-                } catch (err) {
-                    console.error('Failed to resume AudioContext:', err);
                 }
             }
         };
         
-        // Resume on any click, keypress, or touch
-        const events = ['click', 'keydown', 'touchstart'];
+        // Resume on any click, keypress, or touch (multiple events for mobile compatibility)
+        const events = ['click', 'keydown', 'touchstart', 'touchend'];
         const handler = () => {
             resumeAudio();
             // Remove listeners after first interaction
             events.forEach(evt => document.removeEventListener(evt, handler));
         };
         events.forEach(evt => document.addEventListener(evt, handler, { once: true }));
+        
+        // Also add banner click handler for extra visibility
+        if (banner) {
+            banner.addEventListener('click', () => {
+                resumeAudio();
+            });
+        }
     }
 
     /**
@@ -593,6 +645,14 @@ class RoomController {
         const initialVolume = parseInt(volumeControl.value) / 100;
         this.audio.setSidetoneVolume(initialVolume);
         
+        // Jitter buffer size - set initial value
+        const jitterSlider = document.getElementById('jitterBufferSize');
+        const jitterValue = document.getElementById('jitterBufferValue');
+        if (jitterSlider) {
+            jitterSlider.value = this.jitterBufferMs;
+            jitterValue.textContent = `${this.jitterBufferMs} ms`;
+        }
+        
         document.getElementById('volumeControl').addEventListener('input', (e) => {
             const volume = parseInt(e.target.value) / 100;
             this.audio.setSidetoneVolume(volume);
@@ -607,6 +667,21 @@ class RoomController {
         // Auto-decode checkbox
         document.getElementById('autoDecodeEnabled').addEventListener('change', (e) => {
             this.autoDecodeEnabled = e.target.checked;
+        });
+        
+        // Jitter buffer size slider
+        document.getElementById('jitterBufferSize').addEventListener('input', (e) => {
+            this.jitterBufferMs = parseInt(e.target.value);
+            document.getElementById('jitterBufferValue').textContent = `${this.jitterBufferMs} ms`;
+            console.log('Jitter buffer size changed to:', this.jitterBufferMs, 'ms');
+            
+            // Update existing jitter buffers
+            this.decoders.forEach((decoder) => {
+                if (decoder.jitterBuffer) {
+                    decoder.jitterBuffer.bufferMs = this.jitterBufferMs;
+                    console.log('Updated jitter buffer for:', decoder.callsign);
+                }
+            });
         });
         
         // Timestamps checkbox
