@@ -160,3 +160,12 @@ CW_PROTOCOL_SPECIFICATION.md
 
 # Documentation folder (work in progress)
 DOC/
+
+web_platform/
+
+# Web platform - Node.js and development files
+web_platform/node_modules/
+web_platform/.wrangler/
+web_platform/package-lock.json
+web_platform/.dev.vars
+web_platform/dist/

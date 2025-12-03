@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CW Studio - Real-time Morse Code Practice</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>📻 CW Studio</h1>
+            <p class="tagline">Real-time Morse code practice with operators worldwide</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Quick Join Section -->
+        <section class="quick-join">
+            <h2>Join a Practice Room</h2>
+            <div class="room-form">
+                <input type="text" id="callsign" placeholder="Your Callsign (e.g., SM0ONR)" maxlength="10" required>
+                <input type="text" id="roomName" placeholder="Room name (optional, default: main)" value="main">
+                <button id="joinButton" class="btn-primary">Join Room</button>
+            </div>
+            <p class="hint">💡 First time? Try the "main" room to meet other operators</p>
+        </section>
+
+        <!-- Schedule Section -->
+        <section class="schedule">
+            <h2>📅 Regular Schedule (UTC)</h2>
+            <div class="sked-grid">
+                <div class="sked-card">
+                    <div class="day">Monday</div>
+                    <div class="time">20:00 UTC</div>
+                    <div class="speed">Slow Speed Net</div>
+                    <div class="detail">12-18 WPM • Beginners welcome</div>
+                </div>
+                <div class="sked-card">
+                    <div class="day">Wednesday</div>
+                    <div class="time">20:00 UTC</div>
+                    <div class="speed">Medium Speed Net</div>
+                    <div class="detail">20-25 WPM • Intermediate</div>
+                </div>
+                <div class="sked-card">
+                    <div class="day">Friday</div>
+                    <div class="time">19:00 UTC</div>
+                    <div class="speed">High Speed Net</div>
+                    <div class="detail">25-35 WPM • Advanced</div>
+                </div>
+                <div class="sked-card">
+                    <div class="day">Sunday</div>
+                    <div class="time">14:00 UTC</div>
+                    <div class="speed">Casual Ragchew</div>
+                    <div class="detail">Any speed • Just for fun</div>
+                </div>
+            </div>
+            <p class="current-time">Current time: <span id="utcTime">--:--:-- UTC</span></p>
+        </section>
+
+        <!-- How It Works -->
+        <section class="how-it-works">
+            <h2>🔧 How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Enter Your Callsign</h3>
+                    <p>Use your amateur radio callsign or a practice call</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>Join a Room</h3>
+                    <p>Click "Join Room" - your browser will request microphone access</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Key Your CW</h3>
+                    <p>Use an external key connected to audio input, or keyboard (coming soon)</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h3>See Decoded Text</h3>
+                    <p>Watch real-time Morse decoding from all operators in the room</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="features">
+            <h2>✨ Features</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <div class="icon">🎧</div>
+                    <h3>Low Latency Audio</h3>
+                    <p>WebRTC peer-to-peer for ~70-100ms latency</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🔍</div>
+                    <h3>Real-time Decoding</h3>
+                    <p>Automatic Morse code to text conversion</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🆓</div>
+                    <h3>Completely Free</h3>
+                    <p>No registration, no ads, no tracking</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🌍</div>
+                    <h3>Global Access</h3>
+                    <p>Practice with operators from anywhere</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">📱</div>
+                    <h3>Works Everywhere</h3>
+                    <p>Desktop, tablet, mobile - any modern browser</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🔒</div>
+                    <h3>Private & Secure</h3>
+                    <p>End-to-end encrypted audio (SRTP)</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Setup for Native Clients -->
+        <section class="native-setup">
+            <h2>🔌 Using Native CW Gear?</h2>
+            <p>Connect your USB iambic paddle or straight key:</p>
+            <div class="code-block">
+                <pre><code># Install dependencies
+pip3 install pyaudio numpy pyserial
+
+# Run the sender (routes CW to this platform)
+python3 cw_usb_key_sender.py ROOM_ID iambic-b 25 /dev/ttyUSB0
+
+# Example: Join "main" room at 25 WPM
+python3 cw_usb_key_sender.py wss://cw-practice.pages.dev/ws iambic-b 25 /dev/ttyUSB0</code></pre>
+            </div>
+            <p><a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">📦 Get the native client code</a></p>
+        </section>
+
+        <!-- Active Rooms -->
+        <section class="active-rooms">
+            <h2>🟢 Active Rooms Now</h2>
+            <div id="roomsList" class="rooms-list">
+                <p class="loading">Loading active rooms...</p>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq">
+            <h2>❓ FAQ</h2>
+            <details>
+                <summary>What equipment do I need?</summary>
+                <p>Just a modern web browser and microphone! You can key CW by feeding audio from an electronic keyer, or use our keyboard interface (coming soon). For best results, connect a USB iambic paddle with our native client.</p>
+            </details>
+            <details>
+                <summary>How many operators can join?</summary>
+                <p>Currently 2-8 operators per room works best (mesh topology). We're working on scaling to larger groups.</p>
+            </details>
+            <details>
+                <summary>What's the latency like?</summary>
+                <p>Typically 70-140ms depending on your location. This is about the same as HF radio propagation delay for moderate distances.</p>
+            </details>
+            <details>
+                <summary>Do I need to register?</summary>
+                <p>Nope! Just enter your callsign and join. We don't store any personal information.</p>
+            </details>
+            <details>
+                <summary>Can I create private rooms?</summary>
+                <p>Yes! Just enter any unique room name. Share it with your friends to practice together.</p>
+            </details>
+            <details>
+                <summary>Is this open source?</summary>
+                <p>Yes! Check out <a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">the GitHub repository</a>.</p>
+            </details>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Built with ❤️ for the amateur radio community</p>
+            <p>
+                <a href="https://github.com/tompatulpan/duration-encoded-cw-protocol" target="_blank">GitHub</a> •
+                <a href="#" id="aboutLink">About</a> •
+                <a href="#" id="privacyLink">Privacy</a>
+            </p>
+            <p class="footer-73">73 de SM0ONR</p>
+        </div>
+    </footer>
+
+    <script src="js/landing.js"></script>
+</body>
+</html>
