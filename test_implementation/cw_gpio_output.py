@@ -114,7 +114,7 @@ class JitterBuffer:
         self.state_errors = 0
         
         # Debug mode
-        self.debug = False
+        self.debug = False # Unused?
         
     def add_event(self, key_down, duration_ms, arrival_time):
         """Add event to buffer using RELATIVE timing to preserve tempo"""
