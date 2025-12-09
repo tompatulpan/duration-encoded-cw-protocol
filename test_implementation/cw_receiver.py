@@ -49,6 +49,10 @@ class JitterBuffer:
         self.state_errors = 0
         self.suppress_state_errors = False  # Suppress errors during FEC recovery with gaps
         
+        # Watchdog for stuck key-down detection
+        self.last_key_down_time = None  # When key last went down
+        self.max_key_down_duration = 3.0  # Force UP after 3 seconds (safety timeout)
+        
         # Debug mode
         self.debug = False
         
@@ -143,6 +147,17 @@ class JitterBuffer:
     def _playout_loop(self):
         """Play out events at the right time"""
         while self.running:
+            # Check for stuck key-down state
+            if self.last_key_down_time is not None:
+                stuck_duration = time.time() - self.last_key_down_time
+                if stuck_duration > self.max_key_down_duration:
+                    print(f"\n[WARNING] Key stuck DOWN for {stuck_duration:.1f}s - forcing UP")
+                    # Force key up to recover from stuck state
+                    if self.callback:
+                        self.callback(False, 10)  # Short UP event to reset
+                    self.last_key_down_time = None
+                    self.expected_key_state = False  # Reset to UP state
+            
             try:
                 # Get next event (non-blocking with timeout)
                 playout_time, key_down, duration_ms = self.event_queue.get(timeout=0.01)
@@ -157,6 +172,12 @@ class JitterBuffer:
                     # Event is very late (>500ms), skip it
                     print(f"\n[WARNING] Dropped late event (delay: {-delay*1000:.0f}ms)")
                     continue
+                
+                # Track key-down time for watchdog
+                if key_down:
+                    self.last_key_down_time = time.time()
+                else:
+                    self.last_key_down_time = None
                 
                 # Play out event
                 if self.callback:
@@ -175,10 +196,12 @@ class JitterBuffer:
         # This allows continuous operation without buffer delay resets
         # Only reset state validation to allow starting fresh
         self.expected_key_state = None
+        self.last_key_down_time = None  # Clear watchdog
     
     def reset_state_tracking(self):
         """Reset state validation (useful when FEC blocks have gaps)"""
         self.expected_key_state = None
+        self.last_key_down_time = None  # Clear watchdog
         if self.debug:
             print("\n[DEBUG] State tracking reset (FEC block with gaps)")
     

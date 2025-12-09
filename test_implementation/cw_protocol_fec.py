@@ -188,6 +188,17 @@ class CWProtocolFEC(CWProtocol):
         
         if version == self.PROTOCOL_VERSION_FEC:
             # FEC-enabled packet
+            
+            # Check for EOT (3 bytes only)
+            if len(data) == 3 and data[2] == 0xFF:
+                return {
+                    'events': [],
+                    'sequence': data[1],
+                    'eot': True,
+                    'fec_info': None,
+                    'is_fec': False
+                }
+            
             if len(data) < 6:
                 return None
             
@@ -273,7 +284,7 @@ class FECDecoder:
         Returns:
             list: Recovered packets (if block is complete and decodable)
         """
-        if not parsed_packet or 'fec_info' not in parsed_packet:
+        if not parsed_packet or 'fec_info' not in parsed_packet or parsed_packet['fec_info'] is None:
             return []
         
         fec_info = parsed_packet['fec_info']
@@ -478,6 +489,33 @@ class FECDecoder:
         
         for bid in old_blocks:
             del self.blocks[bid]
+    
+    def flush_incomplete_blocks(self):
+        """
+        Flush all incomplete blocks (useful on EOT)
+        Returns packets from incomplete blocks even if not fully decoded
+        
+        Returns:
+            list: All packets from all incomplete blocks, sorted by block_id and position
+        """
+        all_packets = []
+        
+        for block_id in sorted(self.blocks.keys()):
+            block = self.blocks[block_id]
+            if not block['complete']:
+                # Try to decode first (might have enough for recovery)
+                decoded = self._try_decode_block(block_id)
+                if decoded:
+                    all_packets.extend(decoded)
+                else:
+                    # Return what we have, in order
+                    for pkt in block['data']:
+                        if pkt is not None:
+                            all_packets.append(pkt)
+                
+                # Mark as complete so we don't process again
+                block['complete'] = True
+        return all_packets
 
 
 if __name__ == '__main__':

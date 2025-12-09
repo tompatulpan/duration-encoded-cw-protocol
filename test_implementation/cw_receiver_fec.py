@@ -154,9 +154,11 @@ class CWReceiverFEC:
                         print(f"\n[FEC] Block complete: {len(complete_block)} packet(s) ready")
                         
                         # Handle blocks with gaps (packets couldn't be recovered)
-                        if self.jitter_buffer and len(complete_block) < 10:
-                            # Block has gaps - suppress state validation errors
-                            # (gaps cause legitimate state mismatches)
+                        has_gaps = len(complete_block) < 10
+                        if self.jitter_buffer and has_gaps:
+                            # Block has gaps - reset state tracking to prevent stuck key
+                            # Gaps mean we lost some state transitions
+                            self.jitter_buffer.reset_state_tracking()
                             self.jitter_buffer.suppress_state_validation(True)
                         
                         for pkt in complete_block:
@@ -168,6 +170,10 @@ class CWReceiverFEC:
                                         self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
                                     else:
                                         self._process_event(key_down, duration_ms, seq)
+                        
+                        # After processing a gapped block, re-enable state validation
+                        if self.jitter_buffer and has_gaps:
+                            self.jitter_buffer.suppress_state_validation(False)
                 
                 # Check if this is a FEC packet (don't count as data packet)
                 if parsed.get('is_fec', False):
@@ -205,6 +211,22 @@ class CWReceiverFEC:
                 # Check for EOT
                 if parsed.get('eot', False):
                     print(f"\n[EOT] Transmission complete")
+                    
+                    # Flush any incomplete FEC blocks
+                    if self.fec_decoder:
+                        remaining_packets = self.fec_decoder.flush_incomplete_blocks()
+                        if remaining_packets:
+                            print(f"[FEC] Flushed {len(remaining_packets)} packet(s) from incomplete block(s)")
+                            for pkt in remaining_packets:
+                                seq = pkt['sequence']
+                                if seq not in self.processed_sequences:
+                                    self.processed_sequences.add(seq)
+                                    for key_down, duration_ms in pkt['events']:
+                                        if self.jitter_buffer:
+                                            self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
+                                        else:
+                                            self._process_event(key_down, duration_ms, seq)
+                    
                     if self.jitter_buffer:
                         self.jitter_buffer.drain_buffer(timeout=2.0)
                     # Clear processed sequences for next transmission
