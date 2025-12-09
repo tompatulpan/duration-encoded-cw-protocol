@@ -216,6 +216,11 @@ class CWReceiverFEC:
                     if self.fec_decoder:
                         remaining_packets = self.fec_decoder.flush_incomplete_blocks()
                         if remaining_packets:
+                            # Incomplete blocks may have gaps - reset state tracking
+                            if self.jitter_buffer:
+                                self.jitter_buffer.reset_state_tracking()
+                                self.jitter_buffer.suppress_state_validation(True)
+                            
                             print(f"[FEC] Flushed {len(remaining_packets)} packet(s) from incomplete block(s)")
                             for pkt in remaining_packets:
                                 seq = pkt['sequence']
@@ -226,6 +231,13 @@ class CWReceiverFEC:
                                             self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
                                         else:
                                             self._process_event(key_down, duration_ms, seq)
+                            
+                            # Re-enable state validation after processing incomplete blocks
+                            if self.jitter_buffer:
+                                self.jitter_buffer.suppress_state_validation(False)
+                        
+                        # Reset FEC decoder for next transmission
+                        self.fec_decoder.reset()
                     
                     if self.jitter_buffer:
                         self.jitter_buffer.drain_buffer(timeout=2.0)

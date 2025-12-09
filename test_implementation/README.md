@@ -49,22 +49,51 @@ This is a test implementation of the Duration-Encoded CW (DECW) protocol over UD
 
 ### Receivers
 - `cw_receiver.py` - Terminal-based receiver with jitter buffer support
+- `cw_receiver_fec.py` - **FEC-enabled receiver (handles packet loss)**
 - `cw_gpio_output.py` - Raspberry Pi GPIO output for physical key control
 
 ### Senders
 - `cw_auto_sender.py` - Automated sender (text to CW conversion)
 - `cw_interactive_sender.py` - Interactive sender (type-ahead with queue)
+- `cw_sender_fec_sim.py` - **FEC sender with network simulation (testing)**
 - `cw_usb_key_sender.py` - USB serial key interface with iambic keyer
+
+### Protocol Implementation
+- `cw_protocol_fec.py` - **Reed-Solomon FEC implementation**
 
 ### Testing Tools
 - `test_loopback.sh` - Automated test script
 - `test_udp_connection.py` - UDP connectivity diagnostics
 - `test_jitter_buffer.py` - Jitter buffer validation test
 - `test_keyer_output.py` - Keyer logic validation
+- `fec_calculator.py` - **FEC performance calculator**
+
+## Dependencies
+
+### System Requirements
+```bash
+# For audio support (sidetone)
+sudo apt-get install python3-pyaudio portaudio19-dev
+
+# For FEC support (packet loss recovery)
+pip install reedsolo
+
+# Or install in virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate
+pip install reedsolo pyaudio numpy
+```
+
+### Optional Dependencies
+- **PyAudio** - Audio sidetone generation (receiver audio feedback)
+- **reedsolo** - Reed-Solomon FEC for packet loss recovery
+- **numpy** - Audio signal processing (required with PyAudio)
+
+Without these, the system runs in "visual only" mode (no audio, no FEC).
 
 ## Usage
 
-### Local/LAN Testing
+### Local/LAN Testing (No Packet Loss)
 
 **Terminal 1 (Receiver):**
 ```bash
@@ -198,3 +227,114 @@ python3 cw_gpio_output.py --active-low
 - GND → Common ground
 
 See main README for complete hardware setup guide.
+
+## Forward Error Correction (FEC)
+
+**NEW:** Reed-Solomon FEC for reliable CW over lossy networks (WiFi, cellular, internet).
+
+### Why FEC?
+
+Traditional UDP has no packet loss recovery. On poor networks (WiFi with interference, cellular, satellite):
+- Lost packets = missing CW elements
+- Distorted timing
+- Garbled characters
+
+**FEC solves this** by sending redundant data that can reconstruct lost packets.
+
+### FEC Performance
+
+| Network Loss | FEC Recovery | Result          |
+|--------------|--------------|-----------------|
+| 5%           | >95%         | ✓✓✓ Excellent   |
+| 10%          | >90%         | ✓✓ Optimal      |
+| 15%          | >80%         | ✓ Good          |
+| 20%          | ~65%         | ⚠ Marginal      |
+| 25%+         | <50%         | ✗ Poor          |
+
+**Sweet spot:** 5-15% packet loss → Near-perfect recovery
+
+### Using FEC
+
+**Receiver (with FEC):**
+```bash
+# Requires: pip install reedsolo
+python3 cw_receiver_fec.py --jitter-buffer 200
+```
+
+**Note:** FEC requires 200ms+ jitter buffer (FEC packets arrive after data packets)
+
+**Sender (with FEC):**
+```bash
+# Production use (no simulation)
+python3 cw_sender_fec.py <remote_ip> 25 "CQ CQ DE CALLSIGN"
+
+# Testing with network simulation
+python3 cw_sender_fec_sim.py <remote_ip> 25 "test" --loss 0.10 --jitter 30
+```
+
+**Loss parameter:** Decimal fraction (0.0 to 1.0)
+- `--loss 0.05` = 5% packet loss
+- `--loss 0.10` = 10% packet loss
+- `--loss 0.20` = 20% packet loss
+
+### FEC Testing Examples
+
+**1. Perfect network (0% loss):**
+```bash
+# Terminal 1
+python3 cw_receiver_fec.py --jitter-buffer 200
+
+# Terminal 2
+python3 cw_sender_fec_sim.py localhost 25 "test" --loss 0.0 --jitter 0
+# Result: Perfect reception
+```
+
+**2. Good WiFi (5% loss):**
+```bash
+python3 cw_sender_fec_sim.py localhost 25 "cq cq de test" --loss 0.05 --jitter 20
+# Result: >95% recovery, nearly perfect
+```
+
+**3. Poor WiFi (15% loss):**
+```bash
+python3 cw_sender_fec_sim.py localhost 25 "cq cq de test" --loss 0.15 --jitter 50
+# Result: >80% recovery, some gaps
+```
+
+**4. Extreme conditions (25% loss):**
+```bash
+python3 cw_sender_fec_sim.py localhost 25 "cq cq de test" --loss 0.25 --jitter 80
+# Result: ~50% recovery, many gaps
+```
+
+### FEC Calculator
+
+Calculate optimal settings for your network:
+
+```bash
+# Interactive mode
+python3 fec_calculator.py
+
+# Direct calculation
+python3 fec_calculator.py 10% 30
+# Input: 10% loss, ±30ms jitter
+# Output: Recommended 200ms buffer, 90% recovery rate
+```
+
+### FEC Documentation
+
+- `FEC_PERFORMANCE_GUIDE.md` - Comprehensive performance analysis
+- `FEC_QUICK_REFERENCE.txt` - Quick reference card with tables
+- `fec_calculator.py` - Interactive calculator
+
+### FEC Technical Details
+
+**Algorithm:** Reed-Solomon error correction
+- **Block size:** 10 data packets
+- **Redundancy:** 6 FEC packets (18 parity bytes)
+- **Recovery limit:** Up to 3 lost packets per block (30% within block)
+- **Overhead:** 60% additional bandwidth
+
+**Constraint:** Requires ALL 6 FEC packets to attempt recovery. If FEC packets are also lost, recovery may fail.
+
+**Best for:** Networks with 5-15% random packet loss

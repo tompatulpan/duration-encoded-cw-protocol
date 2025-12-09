@@ -51,13 +51,17 @@ class JitterBuffer:
         
         # Watchdog for stuck key-down detection
         self.last_key_down_time = None  # When key last went down
-        self.max_key_down_duration = 3.0  # Force UP after 3 seconds (safety timeout)
+        self.last_activity_time = None  # When last event was added (for stuck detection)
+        self.max_stuck_duration = 2.0  # Force UP after 2 seconds of no activity while key down
         
         # Debug mode
         self.debug = False
         
     def add_event(self, key_down, duration_ms, arrival_time):
         """Add event to buffer using RELATIVE timing to preserve tempo"""
+        
+        # Update activity time for watchdog
+        self.last_activity_time = time.time()
         
         # Validate state transition (DOWN/UP must alternate)
         if self.expected_key_state is not None and key_down == self.expected_key_state:
@@ -147,11 +151,11 @@ class JitterBuffer:
     def _playout_loop(self):
         """Play out events at the right time"""
         while self.running:
-            # Check for stuck key-down state
-            if self.last_key_down_time is not None:
-                stuck_duration = time.time() - self.last_key_down_time
-                if stuck_duration > self.max_key_down_duration:
-                    print(f"\n[WARNING] Key stuck DOWN for {stuck_duration:.1f}s - forcing UP")
+            # Check for stuck key-down state (no activity while key is down)
+            if self.last_key_down_time is not None and self.last_activity_time is not None:
+                time_since_activity = time.time() - self.last_activity_time
+                if time_since_activity > self.max_stuck_duration:
+                    print(f"\n[WARNING] Key stuck DOWN (no activity for {time_since_activity:.1f}s) - forcing UP")
                     # Force key up to recover from stuck state
                     if self.callback:
                         self.callback(False, 10)  # Short UP event to reset
@@ -202,6 +206,7 @@ class JitterBuffer:
         """Reset state validation (useful when FEC blocks have gaps)"""
         self.expected_key_state = None
         self.last_key_down_time = None  # Clear watchdog
+        self.last_activity_time = time.time()  # Reset activity timer
         if self.debug:
             print("\n[DEBUG] State tracking reset (FEC block with gaps)")
     

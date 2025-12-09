@@ -516,6 +516,11 @@ class FECDecoder:
                 # Mark as complete so we don't process again
                 block['complete'] = True
         return all_packets
+    
+    def reset(self):
+        """Reset decoder state for new transmission"""
+        self.blocks.clear()
+        self.current_block_id = None
 
 
 if __name__ == '__main__':
