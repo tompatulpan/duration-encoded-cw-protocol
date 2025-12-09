@@ -213,7 +213,7 @@ class JitterBuffer:
 class SidetoneGenerator:
     """Generate audio sidetone with improved signal quality"""
     
-    def __init__(self, frequency=600, sample_rate=48000):
+    def __init__(self, frequency=600, sample_rate=48000, device_index=None):
         self.frequency = frequency
         self.sample_rate = sample_rate
         self.volume = 0.3
@@ -221,14 +221,37 @@ class SidetoneGenerator:
         if not AUDIO_AVAILABLE:
             return
         
-        self.audio = pyaudio.PyAudio()
-        self.stream = self.audio.open(
-            format=pyaudio.paFloat32,
-            channels=1,
-            rate=sample_rate,
-            output=True,
-            frames_per_buffer=128  # Low latency (~2.6ms at 48kHz)
-        )
+        try:
+            self.audio = pyaudio.PyAudio()
+            
+            # If no device specified, try pipewire/pulseaudio first
+            if device_index is None:
+                # Find pipewire or default device
+                for i in range(self.audio.get_device_count()):
+                    info = self.audio.get_device_info_by_index(i)
+                    name = info['name'].lower()
+                    if 'pipewire' in name or 'pulse' in name or info['name'] == 'default':
+                        device_index = i
+                        print(f"[AUDIO] Auto-selected device {i}: {info['name']}")
+                        break
+            
+            self.stream = self.audio.open(
+                format=pyaudio.paFloat32,
+                channels=1,
+                rate=sample_rate,
+                output=True,
+                output_device_index=device_index,
+                frames_per_buffer=128  # Low latency (~2.6ms at 48kHz)
+            )
+            
+            if device_index is not None:
+                device_info = self.audio.get_device_info_by_index(device_index)
+                print(f"[AUDIO] Using device {device_index}: {device_info['name']}")
+            
+            print(f"[AUDIO] Stream opened successfully: {sample_rate}Hz, {self.frequency}Hz tone, volume={self.volume}")
+        except Exception as e:
+            print(f"[AUDIO ERROR] Failed to open audio stream: {e}")
+            raise
         
         self.phase = 0.0
         self.key_down = False
