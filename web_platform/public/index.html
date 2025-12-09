@@ -91,8 +91,8 @@
             <div class="feature-grid">
                 <div class="feature">
                     <div class="icon">⚡</div>
-                    <h3>Ultra-Low Latency</h3>
-                    <p>WebRTC P2P delivers 70-100ms latency - like real QSO conditions</p>
+                    <h3>Low Latency</h3>
+                    <p>WebSocket relay delivers 370-400ms total latency - feels like HF radio</p>
                 </div>
                 <div class="feature">
                     <div class="icon">🎯</div>
@@ -116,8 +116,8 @@
                 </div>
                 <div class="feature">
                     <div class="icon">🔒</div>
-                    <h3>End-to-End Encrypted</h3>
-                    <p>SRTP audio encryption keeps your practice private</p>
+                    <h3>Secure Transport</h3>
+                    <p>WSS (WebSocket Secure) with TLS encryption for all data</p>
                 </div>
             </div>
         </section>
@@ -156,27 +156,27 @@ python3 cw_usb_key_sender.py main iambic-b 25 /dev/ttyUSB0
             <div class="spec-grid">
                 <div class="spec">
                     <h4>Audio Quality</h4>
-                    <p>48kHz sampling • Opus codec • <strong>70-100ms latency</strong></p>
+                    <p>48kHz Web Audio API • Sine wave synthesis • <strong>5ms attack/release</strong></p>
                 </div>
                 <div class="spec">
                     <h4>Jitter Buffer</h4>
-                    <p>300ms adaptive buffer • Smooth network variations</p>
+                    <p>100-500ms adjustable buffer • Smooths network variations</p>
                 </div>
                 <div class="spec">
                     <h4>Decoder Engine</h4>
-                    <p>Exponential smoothing • <strong>Auto-adapts to 12-35 WPM</strong></p>
+                    <p>Exponential smoothing (70/30) • <strong>Auto-adapts 12-35 WPM</strong></p>
                 </div>
                 <div class="spec">
                     <h4>Network Protocol</h4>
-                    <p>WebRTC mesh P2P • Duration-encoded CW events</p>
+                    <p>WebSocket relay • Duration-encoded CW events • Real-time broadcast</p>
                 </div>
                 <div class="spec">
-                    <h4>Security</h4>
-                    <p>DTLS-SRTP encryption • No central server decryption</p>
+                    <h4>Latency</h4>
+                    <p>70-100ms network + 300ms buffer = 370-400ms total</p>
                 </div>
                 <div class="spec">
                     <h4>Scaling</h4>
-                    <p>2-8 operators per room (mesh) • Cloudflare Durable Objects signaling</p>
+                    <p>Unlimited operators per room • Cloudflare Durable Objects relay</p>
                 </div>
             </div>
         </section>
@@ -190,11 +190,15 @@ python3 cw_usb_key_sender.py main iambic-b 25 /dev/ttyUSB0
             </details>
             <details>
                 <summary>How does the adaptive decoder work?</summary>
-                <p>The decoder uses exponential smoothing to track dit duration from the shortest tones it receives. It automatically adapts to speed changes (12-35 WPM) within 3-5 characters, and adds proper inter-element spacing for accurate playback.</p>
+                <p>The decoder uses exponential smoothing (70/30 ratio) to track dit duration from the shortest tones. It automatically adapts to speed changes (12-35 WPM) within 3-5 characters. Each browser decodes independently from raw timing events.</p>
             </details>
             <details>
                 <summary>Why is there latency?</summary>
-                <p>The 300ms jitter buffer smooths out network timing variations, ensuring clean CW without clicks or gaps. Total latency (70-100ms network + 300ms buffer) is comparable to HF propagation delays, so it feels natural for radio operators.</p>
+                <p>The adjustable jitter buffer (default 300ms) smooths network timing variations, ensuring clean CW without clicks. Total latency is 370-400ms (70-100ms network + 300ms buffer), comparable to HF propagation delays.</p>
+            </details>
+            <details>
+                <summary>How does the network protocol work?</summary>
+                <p>CW events (key down/up with durations) are sent via WebSocket to a Cloudflare Worker, which relays them to all room members. Each client's browser plays audio and decodes text locally from the timing information.</p>
             </details>
             <details>
                 <summary>Can I use this for official QSOs?</summary>

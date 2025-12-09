@@ -472,6 +472,7 @@ Ideas for future development (not yet implemented):
 Inspired by:
 - Protocol concept: Thomas Sailer (DL4YHF)
 - Iambic keyer reference: Steve Haynal (n1gp/iambic-keyer)
+- Ideas from Stu, KZ4LN
 
 
 Happy CW operating!  

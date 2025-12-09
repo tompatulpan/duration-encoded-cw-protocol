@@ -227,16 +227,16 @@ class SidetoneGenerator:
             channels=1,
             rate=sample_rate,
             output=True,
-            frames_per_buffer=256
+            frames_per_buffer=128  # Reduced from 256 for lower latency (~2.6ms at 48kHz)
         )
         
         self.phase = 0.0
         self.key_down = False
         self.envelope = 0.0
         
-        # Envelope shaping to prevent clicks
-        self.rise_time = 0.005  # 5ms
-        self.fall_time = 0.005  # 5ms
+        # Envelope shaping to prevent clicks (optimized for CW)
+        self.rise_time = 0.004  # 4ms - fast, clean attack
+        self.fall_time = 0.004  # 4ms - fast, clean release
         
         # Start audio generation thread
         self.running = True
@@ -246,7 +246,7 @@ class SidetoneGenerator:
     
     def _audio_loop(self):
         """Audio generation thread"""
-        chunk_size = 256
+        chunk_size = 128  # Match frames_per_buffer for consistency
         
         while self.running:
             # Generate audio chunk
@@ -405,6 +405,11 @@ class CWReceiver:
         """Process a CW event (called directly or from jitter buffer)"""
         # Record for statistics
         self.stats.add_event(key_down, duration_ms)
+        
+        # Debug timing
+        if self.debug:
+            state_name = "DOWN" if key_down else "UP  "
+            print(f"\n[PLAY] {state_name} for {duration_ms}ms at {time.time():.3f}")
         
         # Update audio sidetone
         if self.sidetone:

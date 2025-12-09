@@ -581,39 +581,26 @@ class RoomController {
             window.location.href = 'index.html';
         });
         
-        // Mute button
-        document.getElementById('muteButton').addEventListener('click', () => {
-            this.isMuted = !this.isMuted;
-            const btn = document.getElementById('muteButton');
-            if (this.isMuted) {
-                btn.querySelector('.icon').textContent = '🎤';
-                btn.querySelector('.label').textContent = 'Muted';
-                btn.classList.add('active');
-                // Stop sidetone when muting
-                this.audio.stopSidetone();
-            } else {
-                btn.querySelector('.icon').textContent = '🎤';
-                btn.querySelector('.label').textContent = 'Unmuted';
-                btn.classList.remove('active');
-            }
-        });
-        
-        // Deafen button
-        document.getElementById('deafenButton').addEventListener('click', () => {
+        // Mute incoming audio button
+        document.getElementById('muteIncomingButton').addEventListener('click', () => {
             this.isDeafened = !this.isDeafened;
-            const btn = document.getElementById('deafenButton');
+            const btn = document.getElementById('muteIncomingButton');
             if (this.isDeafened) {
                 btn.querySelector('.icon').textContent = '🔇';
-                btn.querySelector('.label').textContent = 'Deafened';
+                btn.querySelector('.label').textContent = 'Audio Off';
                 btn.classList.add('active');
-                // Mute all remote audio
-                this.audioElements.forEach(audio => audio.volume = 0);
+                // Mute sidetone volume
+                if (this.audio && this.audio.sidetoneGain) {
+                    this.audio.sidetoneGain.gain.value = 0;
+                }
             } else {
                 btn.querySelector('.icon').textContent = '🔊';
-                btn.querySelector('.label').textContent = 'Listening';
+                btn.querySelector('.label').textContent = 'Audio On';
                 btn.classList.remove('active');
-                // Unmute remote audio
-                this.audioElements.forEach(audio => audio.volume = 0.8);
+                // Restore sidetone volume
+                if (this.audio && this.audio.sidetoneGain) {
+                    this.audio.sidetoneGain.gain.value = this.audio.sidetoneVolume;
+                }
             }
         });
         
