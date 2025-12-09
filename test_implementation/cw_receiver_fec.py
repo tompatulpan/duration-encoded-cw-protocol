@@ -53,6 +53,9 @@ class CWReceiverFEC:
         else:
             self.fec_decoder = None
         
+        # Track processed packet sequences to avoid duplicates
+        self.processed_sequences = set()
+        
         # Audio sidetone
         self.sidetone = None
         if enable_audio and AUDIO_AVAILABLE:
@@ -136,24 +139,39 @@ class CWReceiverFEC:
                 if not parsed:
                     continue
                 
-                # Check if this is a FEC packet
-                if parsed.get('is_fec', False):
-                    self.fec_packet_count += 1
+                # Add packet to FEC decoder (both data and FEC packets)
+                if self.fec_decoder:
+                    try:
+                        complete_block = self.fec_decoder.add_packet(data, parsed)
+                    except Exception as e:
+                        print(f"[ERROR] FEC decoder exception: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        continue
                     
-                    if self.fec_decoder:
-                        # Add to FEC decoder
-                        recovered = self.fec_decoder.add_packet(parsed)
-                        if recovered:
-                            print(f"\n[FEC] Recovered {len(recovered)} packet(s)!")
-                            self.recovered_packets += len(recovered)
-                            
-                            # Process recovered packets
-                            for pkt in recovered:
+                    if complete_block:
+                        # FEC decoder returned a complete block - process ALL packets in order
+                        print(f"\n[FEC] Block complete: {len(complete_block)} packet(s) ready")
+                        
+                        # Handle blocks with gaps (packets couldn't be recovered)
+                        if self.jitter_buffer and len(complete_block) < 10:
+                            # Block has gaps - suppress state validation errors
+                            # (gaps cause legitimate state mismatches)
+                            self.jitter_buffer.suppress_state_validation(True)
+                        
+                        for pkt in complete_block:
+                            seq = pkt['sequence']
+                            if seq not in self.processed_sequences:
+                                self.processed_sequences.add(seq)
                                 for key_down, duration_ms in pkt['events']:
                                     if self.jitter_buffer:
                                         self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
                                     else:
-                                        self._process_event(key_down, duration_ms, pkt['sequence'])
+                                        self._process_event(key_down, duration_ms, seq)
+                
+                # Check if this is a FEC packet (don't count as data packet)
+                if parsed.get('is_fec', False):
+                    self.fec_packet_count += 1
                     continue
                 
                 self.packet_count += 1
@@ -189,18 +207,19 @@ class CWReceiverFEC:
                     print(f"\n[EOT] Transmission complete")
                     if self.jitter_buffer:
                         self.jitter_buffer.drain_buffer(timeout=2.0)
+                    # Clear processed sequences for next transmission
+                    self.processed_sequences.clear()
                     continue
                 
-                # Process events
-                for key_down, duration_ms in parsed['events']:
-                    if self.jitter_buffer:
-                        self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
-                    else:
-                        self._process_event(key_down, duration_ms, seq)
-                
-                # Add packet to FEC decoder
-                if self.fec_decoder and not parsed.get('is_fec', False):
-                    self.fec_decoder.add_packet(parsed)
+                # If FEC is disabled, process packets immediately
+                # If FEC is enabled, packets are only processed when FEC decoder releases a complete block
+                if not self.fec_decoder:
+                    seq = parsed['sequence']
+                    for key_down, duration_ms in parsed['events']:
+                        if self.jitter_buffer:
+                            self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
+                        else:
+                            self._process_event(key_down, duration_ms, seq)
         
         except KeyboardInterrupt:
             print("\n\nInterrupted")

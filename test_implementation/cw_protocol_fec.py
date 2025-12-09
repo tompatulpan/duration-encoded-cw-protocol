@@ -34,8 +34,9 @@ class CWProtocolFEC(CWProtocol):
         
         if self.fec_enabled:
             # Reed-Solomon encoder: nsym = number of error correction symbols
-            # Can correct up to nsym/2 errors or nsym erasures (known positions)
-            self.rs = reedsolo.RSCodec(self.FEC_REDUNDANCY * 3)  # 9 symbols = 3 packets worth
+            # To recover 3 packets (18 bytes), need 18 parity symbols
+            # Each packet = 6 bytes, so 3 packets = 18 bytes
+            self.rs = reedsolo.RSCodec(18)  # 18 parity symbols for 3-packet (18-byte) recovery
     
     def create_packet_fec(self, key_down, duration_ms):
         """
@@ -106,12 +107,13 @@ class CWProtocolFEC(CWProtocol):
         # Encode with Reed-Solomon
         try:
             encoded = self.rs.encode(block_data)
-            # Extract only the parity symbols (last FEC_REDUNDANCY*3 bytes)
+            # Extract parity symbols (18 bytes for 3-packet recovery)
             parity_bytes = encoded[len(block_data):]
             
-            # Split parity into FEC packets (3 bytes of parity per packet)
+            # Split 18 parity bytes into 6 FEC packets (3 bytes each)
             fec_packets = []
-            for i in range(self.FEC_REDUNDANCY):
+            num_fec_packets = 6  # Need 6 packets to send 18 parity bytes
+            for i in range(num_fec_packets):
                 parity_chunk = parity_bytes[i*3:(i+1)*3]
                 
                 # FEC packet format (6 bytes):
@@ -253,16 +255,21 @@ class FECDecoder:
         if not FEC_AVAILABLE:
             raise ImportError("reedsolo required for FEC decoding")
         
-        self.rs = reedsolo.RSCodec(CWProtocolFEC.FEC_REDUNDANCY * 3)
+        # Match encoder: 18 parity symbols for 3-packet recovery
+        self.rs = reedsolo.RSCodec(18)
         
         # Track received blocks
-        self.blocks = {}  # block_id -> {'data': [packets], 'fec': [parity], 'complete': bool}
+        self.blocks = {}  # block_id -> {'data': [packets], 'fec': [parity], 'complete': bool, 'received_mask': set}
         self.current_block_id = None
     
-    def add_packet(self, parsed_packet):
+    def add_packet(self, raw_bytes, parsed_packet):
         """
         Add a packet to the FEC decoder
         
+        Args:
+            raw_bytes: Raw 6-byte packet data
+            parsed_packet: Parsed packet dict
+            
         Returns:
             list: Recovered packets (if block is complete and decodable)
         """
@@ -278,11 +285,24 @@ class FECDecoder:
             if block_id not in self.blocks:
                 self.blocks[block_id] = {
                     'data': [None] * CWProtocolFEC.FEC_BLOCK_SIZE,
-                    'fec': [],
-                    'complete': False
+                    'raw': [None] * CWProtocolFEC.FEC_BLOCK_SIZE,  # Store raw bytes
+                    'fec': {},  # Changed to dict: fec_index -> parity_bytes
+                    'complete': False,
+                    'received_mask': set()
                 }
             
-            self.blocks[block_id]['fec'].append(fec_info['parity'])
+            # Store FEC parity by index
+            fec_index = fec_info['fec_index']
+            if fec_index not in self.blocks[block_id]['fec']:
+                self.blocks[block_id]['fec'][fec_index] = bytearray()
+            
+            # Add parity bytes (handle continuation packets)
+            if fec_info['continuation']:
+                # This is a continuation packet with the 3rd byte
+                self.blocks[block_id]['fec'][fec_index].append(fec_info['parity'][0])
+            else:
+                # First 2 bytes of parity
+                self.blocks[block_id]['fec'][fec_index].extend(fec_info['parity'])
             
         else:
             # Data packet
@@ -292,13 +312,18 @@ class FECDecoder:
             if block_id not in self.blocks:
                 self.blocks[block_id] = {
                     'data': [None] * CWProtocolFEC.FEC_BLOCK_SIZE,
-                    'fec': [],
-                    'complete': False
+                    'raw': [None] * CWProtocolFEC.FEC_BLOCK_SIZE,  # Store raw bytes
+                    'fec': {},  # Changed to dict: fec_index -> parity_bytes
+                    'complete': False,
+                    'received_mask': set()
                 }
             
             # Store packet at its position (check bounds)
             if position < CWProtocolFEC.FEC_BLOCK_SIZE:
                 self.blocks[block_id]['data'][position] = parsed_packet
+                self.blocks[block_id]['raw'][position] = raw_bytes  # Store raw bytes
+                # Mark this position as actually received (not recovered)
+                self.blocks[block_id]['received_mask'].add(position)
             else:
                 print(f"[FEC WARNING] Position {position} out of range for block {block_id}")
         
@@ -310,7 +335,8 @@ class FECDecoder:
         Attempt to decode a block using FEC
         
         Returns:
-            list: Recovered packets (empty if not yet decodable)
+            list: ALL packets in the block (in order) if block is complete, empty list otherwise
+                 This ensures packets are processed in the correct sequence without gaps
         """
         if block_id not in self.blocks:
             return []
@@ -324,21 +350,124 @@ class FECDecoder:
         received = sum(1 for p in block['data'] if p is not None)
         missing = CWProtocolFEC.FEC_BLOCK_SIZE - received
         
-        # If all packets received, no FEC needed
+        # If all packets received, return them all in order
         if missing == 0:
             block['complete'] = True
-            return [p for p in block['data'] if p is not None]
+            # Return ALL packets in sequence order
+            all_packets = [p for p in block['data'] if p is not None]
+            return all_packets
         
         # If we have enough FEC packets, try to recover
-        if len(block['fec']) >= missing:
+        # We need at least (missing * 6) parity bytes to recover
+        # Each missing packet = 6 bytes needed
+        # IMPORTANT: Only count COMPLETE FEC packets (3 bytes each = non-continuation + continuation)
+        bytes_needed = missing * 6  # 6 bytes per packet
+        
+        # Check if we have ALL 6 FEC packets (we need complete parity for RS decoding)
+        # RS codec requires the full parity array - we can't use partial parity
+        all_fec_complete = all(
+            i in block['fec'] and len(block['fec'][i]) == 3
+            for i in range(6)
+        )
+        
+        if missing > 0 and missing <= CWProtocolFEC.FEC_REDUNDANCY and all_fec_complete:
             print(f"[FEC] Attempting to recover {missing} lost packet(s) in block {block_id}")
             
-            # TODO: Implement Reed-Solomon decoding with erasures
-            # This requires more complex logic to reconstruct the block
-            # For now, just return what we have
-            
             block['complete'] = True
-            return [p for p in block['data'] if p is not None]
+            
+            # Reconstruct the encoded block (data + parity)
+            try:
+                # Build data portion (60 bytes = 10 packets × 6 bytes)
+                block_data = bytearray(CWProtocolFEC.FEC_BLOCK_SIZE * 6)
+                erasure_positions = []
+                
+                for pos in range(CWProtocolFEC.FEC_BLOCK_SIZE):
+                    if block['raw'][pos] is not None:
+                        # Use original raw bytes (what was actually encoded)
+                        block_data[pos*6:(pos+1)*6] = block['raw'][pos]
+                    else:
+                        # Mark missing packet positions as erasures
+                        for i in range(6):
+                            erasure_positions.append(pos * 6 + i)
+                
+                # Reconstruct parity bytes from FEC packets (18 bytes total = 6 packets × 3 bytes)
+                # Place each FEC packet's parity bytes at the correct position
+                parity_data = bytearray(18)
+                num_fec_packets = 6
+                for i in range(num_fec_packets):
+                    if i in block['fec'] and len(block['fec'][i]) == 3:
+                        # Place parity bytes at their correct position
+                        parity_bytes = block['fec'][i]
+                        parity_data[i*3:(i+1)*3] = parity_bytes
+                
+                # Combine data + parity for decoding
+                encoded_block = bytes(block_data) + bytes(parity_data)
+                
+                # Decode with Reed-Solomon using erasure positions
+                # We use the full 18-byte parity array
+                try:
+                    # rs.decode returns (decoded_message, decoded_parity, errata_pos)
+                    decode_result = self.rs.decode(encoded_block, erase_pos=erasure_positions)
+                    
+                    # Extract just the decoded message (first element of tuple)
+                    if isinstance(decode_result, tuple):
+                        decoded = decode_result[0]
+                    else:
+                        decoded = decode_result
+                    
+                    # Extract recovered packets
+                    all_packets = []
+                    for pos in range(CWProtocolFEC.FEC_BLOCK_SIZE):
+                        if block['data'][pos] is not None:
+                            # Use original packet
+                            all_packets.append(block['data'][pos])
+                        else:
+                            # Reconstruct from decoded data
+                            packet_bytes = decoded[pos*6:(pos+1)*6]
+                            
+                            # Parse recovered packet
+                            if packet_bytes[1] == 0xFF:
+                                # Skip padding packets
+                                continue
+                            
+                            key_down = packet_bytes[2] != 0
+                            duration_ms = (packet_bytes[3] << 8) | packet_bytes[4]
+                            sequence = packet_bytes[1]
+                            block_info = packet_bytes[5]
+                            
+                            recovered_pkt = {
+                                'events': [(key_down, duration_ms)],
+                                'sequence': sequence,
+                                'eot': False,
+                                'fec_info': {
+                                    'block_id': (block_info >> 4) & 0x0F,
+                                    'position': block_info & 0x0F
+                                },
+                                'is_fec': False
+                            }
+                            all_packets.append(recovered_pkt)
+                    
+                    print(f"[FEC] ✓ Successfully recovered {missing} packet(s)!")
+                    return all_packets
+                    
+                except Exception as e:
+                    print(f"[FEC] ✗ RS decode failed: {e}")
+                    print(f"[FEC]   Debug: {missing} missing, {len(erasure_positions)} erasure positions, {len(parity_data)} parity bytes")
+                    print(f"[FEC]   FEC packets received: {list(block['fec'].keys())}")
+                    print(f"[FEC]   Parity bytes per packet: {[len(block['fec'][i]) for i in sorted(block['fec'].keys())]}")
+                    # Fall through to return what we have
+                    
+            except Exception as e:
+                import traceback
+                print(f"[FEC] ✗ Recovery error: {e}")
+                if False:  # Set to True for detailed debugging
+                    traceback.print_exc()
+            
+            # If recovery failed, return what we have
+            all_packets = [p for p in block['data'] if p is not None]
+            print(f"[FEC] ⚠️  Could not recover {missing} packet(s)")
+            print(f"[FEC] Returned {len(all_packets)} packets with {missing} gaps")
+            return all_packets
         
         return []
     

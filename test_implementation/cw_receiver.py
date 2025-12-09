@@ -47,6 +47,7 @@ class JitterBuffer:
         # State validation
         self.expected_key_state = None  # None = first event, True = DOWN, False = UP
         self.state_errors = 0
+        self.suppress_state_errors = False  # Suppress errors during FEC recovery with gaps
         
         # Debug mode
         self.debug = False
@@ -57,7 +58,9 @@ class JitterBuffer:
         # Validate state transition (DOWN/UP must alternate)
         if self.expected_key_state is not None and key_down == self.expected_key_state:
             self.state_errors += 1
-            print(f"\n[ERROR] Invalid state: got {'DOWN' if key_down else 'UP'} twice in a row (error #{self.state_errors})")
+            # Only print error if not suppressed (FEC gaps can cause state mismatches)
+            if not self.suppress_state_errors:
+                print(f"\n[ERROR] Invalid state: got {'DOWN' if key_down else 'UP'} twice in a row (error #{self.state_errors})")
             # Don't return - try to continue anyway
         self.expected_key_state = key_down  # Track last state seen
         
@@ -172,6 +175,18 @@ class JitterBuffer:
         # This allows continuous operation without buffer delay resets
         # Only reset state validation to allow starting fresh
         self.expected_key_state = None
+    
+    def reset_state_tracking(self):
+        """Reset state validation (useful when FEC blocks have gaps)"""
+        self.expected_key_state = None
+        if self.debug:
+            print("\n[DEBUG] State tracking reset (FEC block with gaps)")
+    
+    def suppress_state_validation(self, suppress=True):
+        """Suppress state error messages (during FEC recovery with gaps)"""
+        self.suppress_state_errors = suppress
+        if self.debug and suppress:
+            print("\n[DEBUG] State validation errors suppressed (FEC gaps expected)")
     
     def stop(self):
         """Stop playout thread"""
