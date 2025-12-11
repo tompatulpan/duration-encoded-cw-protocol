@@ -70,6 +70,7 @@ def send_text_tcp(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio=Tr
     }
     
     packet_count = 0
+    last_key_state = None  # Track last state to avoid redundant packets
     
     try:
         for char in text.upper():
@@ -78,14 +79,12 @@ def send_text_tcp(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio=Tr
                 continue
             
             if char == ' ':
-                # Word space (7 dit units total, minus 3 already sent after letter = 4)
+                # Word space: just wait (we're already in UP state from previous letter)
+                # Total word space is 7 dits, but we already sent 3 dits after last letter
+                # So wait additional 4 dits
                 word_space_duration = dit_ms * 4
-                if not protocol.send_packet(False, word_space_duration):
-                    print("\n[TCP] Send failed - connection lost")
-                    return False
-                packet_count += 1
                 print("  [SPACE]")
-                # Wait for word space
+                # Sidetone is already off from previous letter space
                 time.sleep(word_space_duration / 1000.0)
                 continue
             
@@ -101,6 +100,7 @@ def send_text_tcp(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio=Tr
                         sidetone.set_key(False)
                     return False
                 packet_count += 1
+                print(f"[TX {packet_count}]", end='', flush=True)
                 
                 # Turn on sidetone
                 if sidetone:

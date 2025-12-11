@@ -169,51 +169,75 @@ class CWReceiverTCP:
                 
                 print(f"[TCP] Client connected from {self.server.client_addr}")
                 
+                # Reset jitter buffer state for new connection
+                if self.jitter_buffer:
+                    # Clear ALL state (don't stop the thread!)
+                    self.jitter_buffer.reset_state_tracking(reason="new TCP connection")
+                    self.jitter_buffer.last_event_end_time = None
+                    self.jitter_buffer.last_arrival = None
+                    self.jitter_buffer.state_errors = 0  # Reset error counter
+                    
+                    # Clear queue using get_nowait (avoid deadlock)
+                    queue_size = 0
+                    try:
+                        while True:
+                            self.jitter_buffer.event_queue.get_nowait()
+                            queue_size += 1
+                    except:
+                        pass
+                    
+                    if queue_size > 0 and self.debug:
+                        print(f"[TCP] Cleared {queue_size} stale events from buffer")
+                    
+                    if self.debug:
+                        print(f"[TCP] Buffer reset complete, ready for new transmission")
+                
                 # Reset counters for new connection
                 self.last_sequence = -1
                 self.packet_count = 0
                 self.lost_packets = 0
                 self.last_packet_time = 0
                 
-                # Reset jitter buffer state for new connection
-                if self.jitter_buffer:
-                    self.jitter_buffer.reset_state_tracking()
-                    # Clear any stale events from previous connection
-                    while not self.jitter_buffer.event_queue.empty():
-                        try:
-                            self.jitter_buffer.event_queue.get_nowait()
-                        except:
-                            break
-                
                 # Receive packets from this client
                 while True:
                     # Receive packet
+                    if self.debug:
+                        print(f"[DEBUG] Waiting for packet...", flush=True)
+                    
                     parsed = self.server.recv_packet(timeout=5.0)
+                    
+                    if self.debug:
+                        print(f"[DEBUG] recv_packet returned: {parsed is not None}", flush=True)
                     
                     if parsed is None:
                         # Timeout or connection closed
                         if not self.server.protocol.is_connected():
                             print(f"\n[TCP] Client disconnected")
                             
-                            # Reset jitter buffer state for clean restart
+                            # Clear jitter buffer for clean restart (don't stop thread!)
                             if self.jitter_buffer:
-                                # Wait for buffer to drain
-                                self.jitter_buffer.drain_buffer(timeout=2.0)
-                                # Reset state tracking completely
-                                self.jitter_buffer.reset_state_tracking()
-                                # Clear any remaining events
-                                while not self.jitter_buffer.event_queue.empty():
-                                    try:
+                                # Reset state
+                                self.jitter_buffer.reset_state_tracking(reason="client disconnected")
+                                self.jitter_buffer.last_event_end_time = None
+                                self.jitter_buffer.last_arrival = None
+                                
+                                # Clear queue using get_nowait (avoid deadlock)
+                                try:
+                                    while True:
                                         self.jitter_buffer.event_queue.get_nowait()
-                                    except:
-                                        break
+                                except:
+                                    pass
                             
                             self.server.close_client()
                             break
+                        # Timeout but still connected - continue waiting
                         continue
                     
                     receive_time = time.time()
                     self.packet_count += 1
+                    
+                    if self.debug:
+                        print(f"\n[DEBUG] Received packet #{self.packet_count}: seq={parsed['sequence']}, events={len(parsed['events'])}")
                     
                     # Check for lost packets
                     seq = parsed['sequence']
