@@ -24,7 +24,8 @@ class CWProtocolFEC(CWProtocol):
     
     # FEC parameters
     FEC_BLOCK_SIZE = 10  # Number of data packets per FEC block
-    FEC_REDUNDANCY = 3   # Number of redundancy packets (can recover from 3 lost packets)
+    FEC_PACKETS = 6      # Number of FEC packets sent per block (18 parity bytes)
+    FEC_REDUNDANCY = 3   # Can recover from up to 3 lost data packets per block
     
     def __init__(self):
         super().__init__()

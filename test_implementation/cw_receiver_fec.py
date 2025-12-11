@@ -76,8 +76,8 @@ class CWReceiverFEC:
         
         print(f"CW Receiver with FEC listening on port {port}")
         if self.protocol.fec_enabled:
-            print(f"FEC enabled: {self.protocol.FEC_BLOCK_SIZE} data + {self.protocol.FEC_REDUNDANCY} redundancy")
-            print(f"Can recover from up to {self.protocol.FEC_REDUNDANCY} lost packets per block")
+            print(f"FEC enabled: {self.protocol.FEC_BLOCK_SIZE} data + {self.protocol.FEC_PACKETS} redundancy packets")
+            print(f"Can recover from up to {self.protocol.FEC_REDUNDANCY} lost data packets per block")
         else:
             print("FEC disabled (reedsolo not installed)")
         
@@ -139,7 +139,20 @@ class CWReceiverFEC:
                 if not parsed:
                     continue
                 
-                # Add packet to FEC decoder (both data and FEC packets)
+                # Process data packets immediately for natural timing
+                # FEC is only used for recovery of lost packets
+                if not parsed.get('is_fec', False) and parsed.get('events'):
+                    # This is a data packet - process immediately
+                    seq = parsed['sequence']
+                    if seq not in self.processed_sequences:
+                        self.processed_sequences.add(seq)
+                        for key_down, duration_ms in parsed['events']:
+                            if self.jitter_buffer:
+                                self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
+                            else:
+                                self._process_event(key_down, duration_ms, seq)
+                
+                # Add packet to FEC decoder for potential recovery
                 if self.fec_decoder:
                     try:
                         complete_block = self.fec_decoder.add_packet(data, parsed)
@@ -150,29 +163,34 @@ class CWReceiverFEC:
                         continue
                     
                     if complete_block:
-                        # FEC decoder returned a complete block - process ALL packets in order
+                        # FEC decoder returned a complete block
+                        # Only process recovered packets (ones we didn't receive originally)
                         print(f"\n[FEC] Block complete: {len(complete_block)} packet(s) ready")
                         
-                        # Handle blocks with gaps (packets couldn't be recovered)
-                        has_gaps = len(complete_block) < 10
-                        if self.jitter_buffer and has_gaps:
-                            # Block has gaps - reset state tracking to prevent stuck key
-                            # Gaps mean we lost some state transitions
-                            self.jitter_buffer.reset_state_tracking()
-                            self.jitter_buffer.suppress_state_validation(True)
-                        
+                        recovered_count = 0
                         for pkt in complete_block:
                             seq = pkt['sequence']
+                            # Only process if not already processed
                             if seq not in self.processed_sequences:
+                                recovered_count += 1
                                 self.processed_sequences.add(seq)
+                                
+                                # Reset state tracking for recovered packets
+                                if self.jitter_buffer:
+                                    self.jitter_buffer.reset_state_tracking()
+                                    self.jitter_buffer.suppress_state_validation(True)
+                                
                                 for key_down, duration_ms in pkt['events']:
                                     if self.jitter_buffer:
                                         self.jitter_buffer.add_event(key_down, duration_ms, receive_time)
                                     else:
                                         self._process_event(key_down, duration_ms, seq)
                         
-                        # After processing a gapped block, re-enable state validation
-                        if self.jitter_buffer and has_gaps:
+                        if recovered_count > 0:
+                            print(f"[FEC] ✓ Recovered {recovered_count} lost packet(s)")
+                        
+                        # Re-enable state validation
+                        if self.jitter_buffer:
                             self.jitter_buffer.suppress_state_validation(False)
                 
                 # Check if this is a FEC packet (don't count as data packet)
