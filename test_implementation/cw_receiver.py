@@ -217,6 +217,48 @@ class JitterBuffer:
         self.last_event_end_time = playout_time + duration_ms / 1000.0
         self.last_arrival = arrival_time
     
+    def add_event_ts(self, key_down, duration_ms, sender_event_time):
+        """
+        Add event with absolute timestamp (for timestamp-based protocols)
+        
+        Args:
+            key_down: Key state
+            duration_ms: Duration in milliseconds
+            sender_event_time: Absolute time when sender generated this event (in receiver's clock)
+        """
+        arrival_time = time.time()
+        now = arrival_time
+        
+        # Schedule playout: sender's event time + buffer headroom
+        playout_time = sender_event_time + self.buffer_ms / 1000.0
+        
+        if self.debug:
+            delay_to_playout = (playout_time - now) * 1000
+            print(f"[DEBUG] TS-based scheduling: {delay_to_playout:.1f}ms from now")
+        
+        # ADAPTIVE: If event would be late, shift it forward
+        if playout_time < now:
+            lateness = (now - playout_time) * 1000
+            playout_time = now + 0.01
+            self.stats_shifts += 1
+            
+            if self.debug:
+                print(f"[DEBUG] LATE EVENT! Shifted by {lateness:.1f}ms")
+        
+        # Track headroom
+        time_until_playout = playout_time - now
+        self.stats_delays.append(time_until_playout * 1000.0)
+        
+        # Add to queue
+        self.event_queue.put((playout_time, key_down, duration_ms))
+        
+        # Track max queue depth
+        queue_size = self.event_queue.qsize()
+        if queue_size > self.stats_max_queue:
+            self.stats_max_queue = queue_size
+        
+        self.last_arrival = arrival_time
+    
     def start(self, callback):
         """Start playout thread
         
