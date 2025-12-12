@@ -170,7 +170,7 @@ class CWReceiverUDPTimestamp:
                 print(f"\nMax delay seen:   {self.max_delay_ms:.1f}ms")
                 
                 if self.jitter_buffer_ms > 0:
-                    headroom = self.jitter_buffer_ms - self.stats.max_delay_ms
+                    headroom = self.jitter_buffer_ms - self.max_delay_ms
                     print(f"Buffer headroom:  {headroom:.1f}ms")
                     
                     if headroom > self.jitter_buffer_ms * 0.5:

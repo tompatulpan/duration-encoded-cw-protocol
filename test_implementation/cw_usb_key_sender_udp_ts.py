@@ -239,82 +239,158 @@ class USBKeySenderUDPTimestamp:
         # Display initial pin states for debugging
         time.sleep(0.1)
         print(f"\nInitial pin states:")
-        print(f"  CTS (dit): {self.ser.cts}")
-        print(f"  DSR (dah): {self.ser.dsr}")
-        print(f"  CD:        {self.ser.cd}")
-        
-        if self.ser.cts:
-            print("[WARNING] CTS is HIGH - check wiring (should be LOW when not pressed)")
-        if self.ser.dsr:
-            print("[WARNING] DSR is HIGH - check wiring (should be LOW when not pressed)")
+        try:
+            print(f"  CTS (dit): {self.ser.cts}")
+            print(f"  DSR (dah): {self.ser.dsr}")
+            print(f"  CD:        {self.ser.cd}")
+            
+            if self.ser.cts:
+                print("[WARNING] CTS is HIGH - check wiring (should be LOW when not pressed)")
+            if self.ser.dsr:
+                print("[WARNING] DSR is HIGH - check wiring (should be LOW when not pressed)")
+        except Exception as e:
+            print(f"[WARNING] Could not read pin states: {e}")
         
         print("\nReady to send CW! (Ctrl+C to exit)")
         print("="*50)
         
         # Create socket
-        self.protocol.sock = self.protocol.create_socket(0)  # Use ephemeral port
+        try:
+            self.protocol.sock = self.protocol.create_socket(0)  # Use ephemeral port
+        except Exception as e:
+            print(f"[ERROR] Failed to create socket: {e}")
+            return
+        
+        # Statistics
+        loop_count = 0
+        last_stats_time = time.time()
+        error_count = 0
+        stats_interval = 60.0  # Print stats every 60 seconds
         
         try:
             while True:
-                # Read paddle states
-                dit_pressed = self.ser.cts  # CTS = dit paddle
-                dah_pressed = self.ser.dsr  # DSR = dah paddle
+                loop_count += 1
                 
-                # Process based on mode
-                if self.keyer_mode == 'straight':
-                    # Straight key: Dit paddle only, immediate on/off
-                    if dit_pressed != self.last_dit:
-                        if dit_pressed:
-                            # Key down - don't know duration yet
-                            self.send_event(True, 1)  # Minimal duration
-                        else:
-                            # Key up - send previous down duration
-                            # (In straight key mode, timing is handled externally)
-                            self.send_event(False, 1)
+                # Periodic statistics (every 60 seconds) - time-based, not iteration-based
+                if self.debug:
+                    now = time.time()
+                    if now - last_stats_time >= stats_interval:
+                        print(f"\n[STATS] Loop iterations: {loop_count}, Errors: {error_count}, Rate: {loop_count/(now-last_stats_time):.0f} loops/sec")
+                        loop_count = 0  # Reset counter
+                        last_stats_time = now
+                
+                try:
+                    # Read paddle states with error handling
+                    try:
+                        dit_pressed = self.ser.cts  # CTS = dit paddle
+                        dah_pressed = self.ser.dsr  # DSR = dah paddle
+                    except (OSError, AttributeError) as e:
+                        error_count += 1
+                        if error_count < 10 or error_count % 100 == 0:
+                            print(f"[ERROR] Serial port read error ({error_count}): {e}")
+                        if error_count > 1000:
+                            print(f"[FATAL] Too many serial errors, exiting")
+                            break
+                        time.sleep(0.01)
+                        continue
+                    
+                    # Process based on mode
+                    if self.keyer_mode == 'straight':
+                        # Straight key: Dit paddle only, immediate on/off
+                        if dit_pressed != self.last_dit:
+                            if dit_pressed:
+                                # Key down - don't know duration yet
+                                self.send_event(True, 1)  # Minimal duration
+                            else:
+                                # Key up - send previous down duration
+                                # (In straight key mode, timing is handled externally)
+                                self.send_event(False, 1)
+                            self.last_dit = dit_pressed
+                    
+                    elif self.keyer_mode == 'bug':
+                        # Bug mode: Dit paddle = automatic dots, Dah paddle = manual dash
+                        # Dit paddle (automatic)
+                        if dit_pressed and not self.last_dit:
+                            dit_ms = int(1200 / self.wpm)
+                            self.send_event(True, dit_ms)
+                            self.send_event(False, dit_ms)
+                        
+                        # Dah paddle (manual)
+                        if dah_pressed != self.last_dah:
+                            if dah_pressed:
+                                self.send_event(True, 1)
+                            else:
+                                self.send_event(False, 1)
+                        
                         self.last_dit = dit_pressed
-                
-                elif self.keyer_mode == 'bug':
-                    # Bug mode: Dit paddle = automatic dots, Dah paddle = manual dash
-                    # Dit paddle (automatic)
-                    if dit_pressed and not self.last_dit:
-                        dit_ms = int(1200 / self.wpm)
-                        self.send_event(True, dit_ms)
-                        self.send_event(False, dit_ms)
+                        self.last_dah = dah_pressed
                     
-                    # Dah paddle (manual)
-                    if dah_pressed != self.last_dah:
-                        if dah_pressed:
-                            self.send_event(True, 1)
-                        else:
-                            self.send_event(False, 1)
+                    elif self.keyer_mode in ['iambic-a', 'iambic-b']:
+                        # Iambic keyer (blocking, polls paddles internally)
+                        try:
+                            self.keyer.update(dit_pressed, dah_pressed, self.send_event)
+                        except Exception as e:
+                            error_count += 1
+                            print(f"[ERROR] Keyer update failed ({error_count}): {e}")
+                            if self.debug:
+                                import traceback
+                                traceback.print_exc()
+                            if error_count > 100:
+                                print(f"[FATAL] Too many keyer errors, exiting")
+                                break
                     
-                    self.last_dit = dit_pressed
-                    self.last_dah = dah_pressed
+                    # Small sleep to avoid busy-waiting (only for non-iambic modes)
+                    if self.keyer_mode not in ['iambic-a', 'iambic-b']:
+                        time.sleep(0.001)  # 1ms polling
                 
-                elif self.keyer_mode in ['iambic-a', 'iambic-b']:
-                    # Iambic keyer (blocking, polls paddles internally)
-                    self.keyer.update(dit_pressed, dah_pressed, self.send_event)
-                
-                # Small sleep to avoid busy-waiting
-                time.sleep(0.001)  # 1ms polling
+                except Exception as e:
+                    error_count += 1
+                    print(f"[ERROR] Main loop exception ({error_count}): {e}")
+                    if self.debug:
+                        import traceback
+                        traceback.print_exc()
+                    if error_count > 100:
+                        print(f"[FATAL] Too many errors, exiting")
+                        break
+                    time.sleep(0.01)
         
         except KeyboardInterrupt:
             print("\n\nShutting down...")
         
+        except Exception as e:
+            print(f"\n[FATAL ERROR] Unhandled exception: {e}")
+            import traceback
+            traceback.print_exc()
+        
         finally:
+            print(f"\nTotal loop iterations: {loop_count}")
+            print(f"Total errors encountered: {error_count}")
+            
             # Turn off key if it's on
             if self.current_key_state:
-                self.send_event(False, 1)
+                try:
+                    self.send_event(False, 1)
+                except:
+                    pass
             
             # Cleanup
             if self.sidetone:
-                self.sidetone.close()
+                try:
+                    self.sidetone.close()
+                except Exception as e:
+                    print(f"[WARNING] Error closing sidetone: {e}")
             
             if self.ser:
-                self.ser.close()
+                try:
+                    self.ser.close()
+                except Exception as e:
+                    print(f"[WARNING] Error closing serial port: {e}")
             
             if self.protocol.sock:
-                self.protocol.close()
+                try:
+                    self.protocol.close()
+                except Exception as e:
+                    print(f"[WARNING] Error closing socket: {e}")
             
             print("Sender stopped.")
 

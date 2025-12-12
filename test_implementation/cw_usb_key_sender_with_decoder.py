@@ -649,7 +649,7 @@ def main():
     
     # Parse arguments
     host = sys.argv[1]
-    mode_arg = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else 'straight'
+    mode_arg = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('--') else 'iambic-b'
     wpm = int(sys.argv[3]) if len(sys.argv) > 3 and not sys.argv[3].startswith('--') else 20
     serial_port = sys.argv[4] if len(sys.argv) > 4 and not sys.argv[4].startswith('--') else None
     
