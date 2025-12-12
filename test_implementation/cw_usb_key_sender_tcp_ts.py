@@ -493,8 +493,8 @@ Examples:
     parser.add_argument('--port', type=int, default=7356,
                        help='TCP port (default: 7356 for timestamp protocol)')
     parser.add_argument('--mode', choices=['straight', 'iambic-a', 'iambic-b', 'bug'],
-                       default='straight',
-                       help='Keying mode (default: straight)')
+                       default='iambic-b',
+                       help='Keyer mode (default: iambic-b)')
     parser.add_argument('--wpm', type=int, default=20,
                        help='Speed in WPM for iambic/bug modes (default: 20)')
     parser.add_argument('--serial-port', help='Serial port device (auto-detect if not specified)')
