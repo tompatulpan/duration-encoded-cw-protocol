@@ -1,0 +1,15 @@
+name = "cw-studio-relay"
+main = "src/index.js"
+compatibility_date = "2024-12-12"
+
+# Workers configuration
+workers_dev = true
+
+# Resource limits (free tier)
+[limits]
+cpu_ms = 10
+
+# Custom domain (optional)
+# routes = [
+#   { pattern = "cw-relay.yourdomain.com", zone_name = "yourdomain.com" }
+# ]
