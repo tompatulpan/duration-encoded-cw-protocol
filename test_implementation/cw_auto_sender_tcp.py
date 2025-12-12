@@ -157,8 +157,10 @@ def send_text_tcp(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio=Tr
         else:
             print("[TCP] EOT sent successfully")
         
-        # Wait a moment for receiver to drain buffer
-        time.sleep(0.5)
+        # Wait for receiver to drain buffer completely
+        # This prevents overlapping transmissions and audio desync
+        print("[TCP] Waiting for buffer to drain...")
+        time.sleep(1.0)
         
     except KeyboardInterrupt:
         print("\n\nInterrupted")

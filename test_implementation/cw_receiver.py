@@ -24,13 +24,21 @@ except ImportError:
 class JitterBuffer:
     """Buffer CW events to smooth out network jitter"""
     
+    # Maximum recommended buffer size
+    MAX_BUFFER_MS = 1000
+    
     def __init__(self, buffer_ms=100):
         """
         Initialize jitter buffer with RELATIVE timing
         
         Args:
-            buffer_ms: Buffer depth in milliseconds (recommended: 50-200ms)
+            buffer_ms: Buffer depth in milliseconds (recommended: 50-200ms, max: 1000ms)
         """
+        # Validate buffer size
+        if buffer_ms > self.MAX_BUFFER_MS:
+            print(f"[WARNING] Buffer size {buffer_ms}ms exceeds recommended maximum of {self.MAX_BUFFER_MS}ms")
+            print(f"[WARNING] This will cause {buffer_ms}ms audio delay - consider using smaller buffer")
+        
         self.buffer_ms = buffer_ms
         self.event_queue = queue.PriorityQueue()
         self.running = False
@@ -52,7 +60,8 @@ class JitterBuffer:
         # Watchdog for stuck key-down detection
         self.last_key_down_time = None  # When key last went down
         self.last_activity_time = None  # When last event was added (for stuck detection)
-        self.max_stuck_duration = 2.0  # Force UP after 2 seconds of no activity while key down
+        # Stuck timeout adapts to buffer size (minimum 2s, or 2x buffer size)
+        self.max_stuck_duration = max(2.0, (buffer_ms * 2) / 1000.0)
         
         # Debug mode
         self.debug = False
@@ -94,8 +103,17 @@ class JitterBuffer:
         if self.debug and arrival_gap > 0:
             print(f"\n[DEBUG] Arrival gap: {arrival_gap*1000:.1f}ms, Duration: {duration_ms}ms, State: {'DOWN' if key_down else 'UP'}")
         
+        # Detect word space gaps (arrival gap > 200ms typically indicates word space)
+        # Reset timeline to prevent "late event" shifts
+        word_space_gap_threshold = 0.2  # 200ms
+        if self.last_event_end_time is not None and arrival_gap > word_space_gap_threshold:
+            if self.debug:
+                print(f"[DEBUG] Word space detected ({arrival_gap*1000:.0f}ms gap) - resetting timeline to maintain buffer")
+            # Reset timeline: schedule this event with full buffer headroom
+            self.last_event_end_time = None
+        
         if self.last_event_end_time is None:
-            # First event: schedule buffer_ms from now
+            # First event OR post-word-space: schedule buffer_ms from now
             playout_time = now + self.buffer_ms / 1000.0
             if self.debug:
                 print(f"[DEBUG] First event: playout in {self.buffer_ms}ms")
@@ -202,13 +220,13 @@ class JitterBuffer:
         self.expected_key_state = None
         self.last_key_down_time = None  # Clear watchdog
     
-    def reset_state_tracking(self):
+    def reset_state_tracking(self, reason="FEC block with gaps"):
         """Reset state validation (useful when FEC blocks have gaps)"""
         self.expected_key_state = None
         self.last_key_down_time = None  # Clear watchdog
         self.last_activity_time = time.time()  # Reset activity timer
         if self.debug:
-            print("\n[DEBUG] State tracking reset (FEC block with gaps)")
+            print(f"\n[DEBUG] State tracking reset ({reason})")
     
     def suppress_state_validation(self, suppress=True):
         """Suppress state error messages (during FEC recovery with gaps)"""

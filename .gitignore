@@ -161,6 +161,7 @@ CW_PROTOCOL_SPECIFICATION.md
 # Documentation folder (work in progress)
 DOC/
 
+.github/
 web_platform/
 
 # Web platform - Node.js and development files

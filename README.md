@@ -120,6 +120,9 @@ python3 cw_usb_key_sender.py localhost iambic-b 25 /dev/ttyUSB0
 
 # Hardware key with text-decoder
 python3 cw_usb_key_sender_with_decoder.py localhost iambic-b 25 /dev/ttyUSB0
+
+# Hardware key with FEC and decoder (for packet loss recovery)
+python3 cw_usb_key_sender_with_decoder_fec.py localhost iambic-b 25 /dev/ttyUSB0
 ```
 
 ### Common Options
@@ -205,9 +208,12 @@ For driving physical transmitter keying circuits or relays on Raspberry Pi:
 # If needed, install with:
 sudo apt install python3-rpi.gpio
 # or: pip3 install RPi.GPIO
+
+# For FEC support (packet loss recovery):
+pip3 install reedsolo
 ```
 
-**Basic Usage:**
+**Basic Usage (without FEC):**
 ```bash
 # Default: GPIO pin 17, active-high, 100ms jitter buffer
 python3 cw_gpio_output.py
@@ -229,6 +235,27 @@ python3 cw_gpio_output.py --stats
 
 # Combine options
 python3 cw_gpio_output.py --pin 23 --buffer 150 --active-low --debug --stats
+```
+
+**With FEC (Forward Error Correction for packet loss recovery):**
+```bash
+# Default: GPIO pin 17, active-high, 200ms jitter buffer (recommended for FEC)
+python3 cw_gpio_output_fec.py
+
+# Custom GPIO pin
+python3 cw_gpio_output_fec.py --pin 23
+
+# For poor network conditions with larger buffer
+python3 cw_gpio_output_fec.py --buffer 250
+
+# Active-low output
+python3 cw_gpio_output_fec.py --active-low
+
+# Debug mode
+python3 cw_gpio_output_fec.py --debug
+
+# Combine options
+python3 cw_gpio_output_fec.py --pin 23 --buffer 200 --active-low --debug
 ```
 
 **Hardware Connection:**
