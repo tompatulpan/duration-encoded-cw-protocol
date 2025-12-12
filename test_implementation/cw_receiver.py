@@ -52,6 +52,11 @@ class JitterBuffer:
         self.stats_shift_after_gap = 0  # Shifts after >100ms arrival gap (manual keying)
         self.stats_max_queue = 0
         
+        # Adaptive word space detection
+        self.word_space_base_threshold = 0.250  # 250ms base threshold (increased from 200ms for WiFi)
+        self.recent_gaps = []  # Track recent inter-packet gaps for adaptive detection
+        self.max_recent_gaps = 20  # Sample size for gap statistics
+        
         # State validation
         self.expected_key_state = None  # None = first event, True = DOWN, False = UP
         self.state_errors = 0
@@ -66,6 +71,58 @@ class JitterBuffer:
         # Debug mode
         self.debug = False
         
+    def _update_gap_statistics(self, gap_ms):
+        """Track recent gaps to distinguish network delays from intentional pauses"""
+        self.recent_gaps.append(gap_ms)
+        if len(self.recent_gaps) > self.max_recent_gaps:
+            self.recent_gaps.pop(0)
+    
+    def _is_word_space(self, gap_ms):
+        """
+        Detect word spaces using adaptive threshold.
+        
+        Word space characteristics:
+        - At 25 WPM: 336ms (7 × 48ms dit)
+        - At 20 WPM: 420ms (7 × 60ms dit)
+        - At 15 WPM: 560ms (7 × 80ms dit)
+        
+        Network delay characteristics:
+        - LAN: <5ms
+        - Good WiFi: 50-150ms
+        - Poor WiFi: 150-250ms
+        
+        Strategy: Adapt based on observed gaps - word space is much larger than typical gaps
+        """
+        # Need enough samples to calculate median
+        if len(self.recent_gaps) < 10:
+            # Fallback: use simple threshold (only truly long gaps)
+            # This avoids false positives during warmup period
+            return gap_ms >= 300  # Conservative - only actual word spaces (336ms at 25 WPM)
+        
+        # Calculate median of ALL recent gaps (includes element, letter, and word spaces)
+        sorted_gaps = sorted(self.recent_gaps)
+        median_gap = sorted_gaps[len(sorted_gaps) // 2]
+        
+        # Word space should be significantly larger than typical gaps
+        # At 25 WPM: word space (336ms) vs letter space (144ms) = 2.33x ratio
+        # Use 4.0x median to account for letter space + network delay on WiFi
+        # - LAN: median ~48ms → threshold ~192ms (above letter space 144ms, catches word spaces 336ms)
+        # - WiFi: median ~100ms → threshold ~400ms (above letter+delay 250ms, catches word spaces 450ms)
+        adaptive_threshold = median_gap * 4.0
+        
+        # Enforce absolute minimum of 225ms to prevent false positives on letter spaces
+        # Letter space at slowest common speed (15 WPM): 3 × 80ms = 240ms
+        # With high WiFi jitter: could be 240ms - 20ms (early) = 220ms
+        # Letter space at 25 WPM: 144ms + worst WiFi delay 80ms = 224ms
+        # Word space at fastest speed (30 WPM): 7 × 40ms = 280ms minimum
+        # Safe threshold: 225ms catches word spaces (280ms+) but not letter spaces (220ms-)
+        adaptive_threshold = max(225, adaptive_threshold)
+        
+        if self.debug and gap_ms >= adaptive_threshold:
+            print(f"[DEBUG] Adaptive word space: gap={gap_ms:.1f}ms, threshold={adaptive_threshold:.1f}ms, median={median_gap:.1f}ms")
+        
+        return gap_ms >= adaptive_threshold
+    
     def add_event(self, key_down, duration_ms, arrival_time):
         """Add event to buffer using RELATIVE timing to preserve tempo"""
         
@@ -99,14 +156,18 @@ class JitterBuffer:
         arrival_gap = 0
         if self.last_arrival:
             arrival_gap = arrival_time - self.last_arrival
+            # Update gap statistics for adaptive word space detection
+            self._update_gap_statistics(arrival_gap * 1000)  # Convert to ms
         
         if self.debug and arrival_gap > 0:
             print(f"\n[DEBUG] Arrival gap: {arrival_gap*1000:.1f}ms, Duration: {duration_ms}ms, State: {'DOWN' if key_down else 'UP'}")
+            # Show adaptive detection details
+            is_ws = self._is_word_space(arrival_gap * 1000)
+            print(f"[DEBUG] _is_word_space({arrival_gap*1000:.1f}ms) = {is_ws}, samples={len(self.recent_gaps)}")
         
-        # Detect word space gaps (arrival gap > 200ms typically indicates word space)
+        # Detect word space gaps using adaptive detection
         # Reset timeline to prevent "late event" shifts
-        word_space_gap_threshold = 0.2  # 200ms
-        if self.last_event_end_time is not None and arrival_gap > word_space_gap_threshold:
+        if self.last_event_end_time is not None and arrival_gap > 0 and self._is_word_space(arrival_gap * 1000):
             if self.debug:
                 print(f"[DEBUG] Word space detected ({arrival_gap*1000:.0f}ms gap) - resetting timeline to maintain buffer")
             # Reset timeline: schedule this event with full buffer headroom
@@ -121,6 +182,7 @@ class JitterBuffer:
             # Subsequent events: start when previous event finished
             # Trust the packet timing - it already encodes correct durations
             playout_time = self.last_event_end_time
+            
             if self.debug:
                 delay_to_playout = (playout_time - now) * 1000
                 print(f"[DEBUG] Scheduled playout: {delay_to_playout:.1f}ms from now")
@@ -216,9 +278,34 @@ class JitterBuffer:
         
         # Note: We deliberately do NOT reset last_event_end_time here
         # This allows continuous operation without buffer delay resets
+        # Note: We also do NOT reset recent_gaps - network characteristics persist!
         # Only reset state validation to allow starting fresh
         self.expected_key_state = None
         self.last_key_down_time = None  # Clear watchdog
+    
+    def reset_connection(self, reason="connection reset"):
+        """Full reset for new connection - clears all state including gap statistics"""
+        # Clear timing state
+        self.last_event_end_time = None
+        self.last_arrival = None
+        
+        # Clear queue
+        while not self.event_queue.empty():
+            try:
+                self.event_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        # Reset state validation
+        self.expected_key_state = None
+        self.last_key_down_time = None
+        self.last_activity_time = None
+        
+        # Reset gap statistics (new connection may have different network characteristics)
+        self.recent_gaps = []
+        
+        if self.debug:
+            print(f"\n[DEBUG] Full buffer reset ({reason})")
     
     def reset_state_tracking(self, reason="FEC block with gaps"):
         """Reset state validation (useful when FEC blocks have gaps)"""
