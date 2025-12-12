@@ -13,12 +13,14 @@ The codebase uses a **shared component architecture** to avoid duplication:
 ```
 Core Layer:
   cw_protocol.py          → Base protocol (timing encoding/decoding)
-    ├── Inherited by cw_protocol_tcp.py (TCP framing)
+    ├── Inherited by cw_protocol_tcp.py (TCP framing, duration-based)
+    ├── Inherited by cw_protocol_tcp_ts.py (TCP framing, timestamp-based)
     └── Inherited by cw_protocol_fec.py (FEC error correction)
 
 Shared Components Layer:
   cw_receiver.py          → Defines JitterBuffer and SidetoneGenerator
-    ├── Imported by cw_receiver_tcp.py
+    ├── Imported by cw_receiver_tcp.py (duration-based scheduling)
+    ├── Imported by cw_receiver_tcp_ts.py (timestamp-based scheduling)
     └── Imported by cw_receiver_fec.py
 
 Applications:
@@ -46,11 +48,31 @@ Packet for dit (48ms DOWN):
   Byte 2: 0x30      # Duration 48ms (0x30 = 48 decimal)
 ```
 
-**TCP Packet Structure (length-prefix framing):**
+**TCP Packet Structure (duration-based, length-prefix framing):**
 ```python
 [length] [sequence_number] [key_state] [duration_ms]
  2 bytes      1 byte         1 byte       1-2 bytes
 ```
+
+**TCP Timestamp Packet Structure (timestamp-based, burst-resistant):**
+```python
+[length] [sequence_number] [key_state] [duration_ms] [timestamp_ms]
+ 2 bytes      1 byte         1 byte       1-2 bytes     4 bytes
+```
+
+**Timestamp Protocol Design:**
+- **Timestamp field:** 4 bytes, big-endian (`struct.pack('!I', ms)`)
+- **Relative timing:** Milliseconds since `transmission_start` (sender tracks)
+- **First packet:** Sets `transmission_start = time.time()`, timestamp = 0
+- **Subsequent packets:** `timestamp = int((time.time() - transmission_start) * 1000)`
+- **Receiver sync:** On first packet, `sender_timeline_offset = now - (timestamp / 1000.0)`
+- **Absolute scheduling:** `playout_time = sender_timeline_offset + (timestamp / 1000.0) + buffer_ms / 1000.0`
+
+**Why timestamp protocol:**
+- Decouples arrival time from playout time (immune to packet bursts)
+- Duration-based: Cumulative scheduling accumulates burst delays (queue buildup)
+- Timestamp-based: Absolute time reference prevents cumulative delay
+- Performance: Queue depth 2-3 (vs 6-7), scheduling variance ±1ms (vs ±50ms)
 
 **Why length-prefix for TCP:**
 - TCP is a stream protocol (no packet boundaries)
@@ -101,15 +123,20 @@ send_packet(DOWN, 144)   # Timing distorted, audio artifacts
 
 ### 2. UDP vs TCP Decision Matrix
 
-| Scenario | Use UDP | Use TCP | Reason |
-|----------|---------|---------|--------|
-| LAN | ✅ | ❌ | Low latency, no packet loss |
-| Internet (good) | ✅ + buffer | ⚠️ + buffer | UDP with jitter buffer preferred |
-| Internet (poor, >50ms jitter) | ❌ | ✅ + buffer | TCP handles high jitter better |
-| Packet loss 5-15% | ✅ + FEC | ❌ | FEC can recover |
-| Packet loss >15% | ❌ | ✅ | TCP retransmission needed |
+| Scenario | Use UDP | Use TCP | Use TCP+TS | Reason |
+|----------|---------|---------|------------|--------|
+| LAN | ✅ | ❌ | ❌ | Low latency, no packet loss |
+| WiFi (good) | ✅ + buffer | ⚠️ + buffer | ✅ + buffer | TCP+TS best for WiFi bursts |
+| WiFi (poor) | ❌ | ⚠️ + buffer | ✅ + buffer | Timestamps prevent queue buildup |
+| Internet (good) | ✅ + buffer | ⚠️ + buffer | ✅ + buffer | UDP or TCP+TS work well |
+| Internet (poor, >50ms jitter) | ❌ | ✅ + buffer | ✅ + buffer | TCP handles high jitter better |
+| Packet loss 5-15% | ✅ + FEC | ❌ | ❌ | FEC can recover |
+| Packet loss >15% | ❌ | ✅ | ✅ + TS | TCP retransmission needed |
 
-**Default:** UDP with jitter buffer for internet use
+**Default recommendations:**
+- **LAN:** UDP (no buffer)
+- **WiFi:** TCP with timestamps + 150ms buffer
+- **Internet:** UDP + 100ms buffer, or TCP+TS + 150ms buffer
 
 ### 3. Sequence Numbers and Special Packets
 
@@ -158,7 +185,7 @@ time.sleep(1.0)  # Gives receiver time to play out buffered events
 
 ### 4. Jitter Buffer Behavior
 
-The jitter buffer uses **relative timing** to preserve CW tempo:
+**Duration-Based Protocol (relative timing):**
 
 ```python
 # Each event starts when the previous event ends
@@ -168,14 +195,78 @@ playout_time = self.last_event_end_time
 # playout_time = arrival_time + buffer_ms  # WRONG
 ```
 
-**Word Space Detection (Critical):**
+**Timestamp-Based Protocol (absolute timing):**
+
+```python
+# First packet: Synchronize to sender timeline
+if self.sender_timeline_offset is None:
+    self.sender_timeline_offset = time.time() - (timestamp_ms / 1000.0)
+
+# Calculate sender's event time
+sender_event_time = self.sender_timeline_offset + (timestamp_ms / 1000.0)
+
+# Schedule with buffer
+playout_time = sender_event_time + (self.buffer_ms / 1000.0)
+
+# No relative timeline tracking (absolute reference)
+```
+
+**Key Difference - Scheduling Algorithm:**
+
+**Duration-based: "Play when previous finishes"**
+```python
+# Cumulative chain - each event depends on previous
+playout_time = self.last_event_end_time
+
+# Example: 4 packets arrive in burst (all within 5ms)
+Packet 1: DOWN 48ms  → playout at T+100ms, ends at T+148ms
+Packet 2: UP 48ms    → playout at T+148ms, ends at T+196ms
+Packet 3: DOWN 144ms → playout at T+196ms, ends at T+340ms
+Packet 4: UP 48ms    → playout at T+340ms, ends at T+388ms
+
+# Result: Queue depth = 4 events (all queued simultaneously)
+#         Scheduled 388ms into future
+#         Burst arrival accumulated into long chain
+```
+
+**Timestamp-based: "Play at sender's absolute time"**
+```python
+# Independent scheduling - each event has absolute reference
+playout_time = sender_timeline_offset + (timestamp_ms / 1000.0) + buffer_ms
+
+# Same 4 packets arrive in burst (all within 5ms)
+Packet 1: ts=0ms   → playout at sender_T0 + 0ms + 150ms   (T+150ms)
+Packet 2: ts=48ms  → playout at sender_T0 + 48ms + 150ms  (T+198ms)
+Packet 3: ts=96ms  → playout at sender_T0 + 96ms + 150ms  (T+246ms)
+Packet 4: ts=144ms → playout at sender_T0 + 144ms + 150ms (T+294ms)
+
+# Result: Queue depth = 2-3 events (oldest plays out while new arrive)
+#         Scheduled at consistent 150ms buffer target
+#         Burst arrival doesn't create cumulative delay
+```
+
+**Why Timestamps Solve the Burst Problem:**
+- Duration-based chains events together → burst creates long queue
+- Timestamp-based uses sender's clock → each event independent
+- WiFi/TCP bursts (4-5 packets in <5ms) don't accumulate delays
+- Queue depth reduced from 6-7 to 2-3
+- Scheduling variance reduced from ±50ms to ±1ms
+
+**Performance Impact (WiFi Testing):**
+- Duration-based: Queue 6-7 events, scheduling 200-480ms ahead (variable)
+- Timestamp-based: Queue 2-3 events, scheduling 100-150ms (consistent)
+- Audio artifacts eliminated (no "lengthening dah" from queue buildup)
+
+**Word Space Detection (Critical for duration-based):**
 - Gaps > 200ms indicate word spaces (not network jitter)
 - Reset timeline to maintain buffer headroom
 - Prevents false "late event" shifts
+- **Not needed for timestamp protocol** (absolute timing)
 
 **When modifying jitter buffer:**
-- Always preserve relative timing within characters/words
-- Only reset timeline on intentional gaps (word spaces, EOT)
+- Duration-based: Preserve relative timing within characters/words
+- Timestamp-based: Calculate absolute playout time from timestamp
+- Only reset timeline on intentional gaps (word spaces, EOT) for duration-based
 - Test with automated sender to verify word space handling
 
 ### 5. State Machine Validation

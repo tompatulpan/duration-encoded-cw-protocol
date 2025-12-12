@@ -10,7 +10,9 @@ import time
 import threading
 from cw_protocol import CWProtocol, UDP_PORT
 
-TCP_PORT = UDP_PORT
+# TCP Timestamp uses separate port from duration-based TCP
+TCP_TS_PORT = 7356  # TCP timestamp protocol port
+TCP_PORT = TCP_TS_PORT  # Alias for compatibility
 
 
 class CWProtocolTCPTimestamp(CWProtocol):
