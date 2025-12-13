@@ -125,6 +125,23 @@ class JitterBuffer {
   }
   
   /**
+   * Remove sender timeline (on disconnect)
+   */
+  removeSender(callsign) {
+    console.log('[JitterBuffer] Removing sender timeline for:', callsign);
+    this.senderTimelines.delete(callsign);
+    
+    // Remove any queued events from this sender
+    const beforeCount = this.queue.length;
+    this.queue = this.queue.filter(event => event.callsign !== callsign);
+    const removed = beforeCount - this.queue.length;
+    
+    if (removed > 0) {
+      console.log('[JitterBuffer] Removed', removed, 'queued events from', callsign);
+    }
+  }
+  
+  /**
    * Clear buffer
    */
   clear() {

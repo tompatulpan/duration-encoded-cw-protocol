@@ -120,7 +120,7 @@ class TCPTSClient {
         
       case 'cw_event':
         this.stats.eventsReceived++;
-        console.log('[TCP-TS] Received CW event:', data.callsign, 'key:', data.key_down, 'dur:', data.duration_ms);
+        console.log('[TCP-TS] Received CW event:', data.callsign, 'key:', data.key_down, 'dur:', data.duration_ms, 'FULL:', JSON.stringify(data));
         if (this.onCwEvent) {
           this.onCwEvent(data);
         }

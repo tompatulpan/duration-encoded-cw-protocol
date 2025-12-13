@@ -1,10 +1,110 @@
-# CW Studio - TCP Timestamp Protocol Web Platform
+# TCP Timestamp Protocol - Web Platform
 
-Multi-user web-based Morse code practice platform using TCP Timestamp protocol for burst-resistant timing.
+## Overview
 
-**Live Demo:** TBD (Deploy to Cloudflare Pages)
+This directory contains a web-based implementation of the TCP Timestamp Protocol for Morse code transmission over WebSocket connections.
 
-## Features
+**Status:** Protocol documentation and design complete. Web platform implementation details available in separate section below.
+
+## Core Protocol Design
+
+## Core Protocol Design
+
+### TCP Timestamp Protocol Overview
+
+**TCP Timestamp Protocol Advantages:**
+- ✅ **Events, not audio**: Send key state + duration + timestamp
+- ✅ **Absolute timing**: Each event has precise playout time
+- ✅ **Burst-resistant**: WiFi/TCP bursts don't affect timing
+- ✅ **Low bandwidth**: ~50 bytes/event vs ~5KB/sec audio
+- ✅ **Perfect timing**: ±1ms accuracy (vs ±50ms for audio)
+- ✅ **Decoder-friendly**: Precise timing = better decoding
+
+**Event Format:**
+```javascript
+{
+  type: 'cw_event',
+  callsign: 'SM5ABC',
+  key_down: true,          // true=DOWN, false=UP
+  duration_ms: 48,         // How long key was in this state
+  timestamp_ms: 1234,      // When event occurred (ms since session start)
+  sequence: 42             // Packet sequence number
+}
+```
+
+### Protocol Design Principles
+
+### Protocol Design Principles
+
+**WebSocket JSON Events**
+
+This platform uses **pure WebSocket JSON messaging**. The "TCP-TS" name refers to the timing principles (timestamps for burst-resistance), not binary TCP protocol.
+
+**Event format:**
+```javascript
+{
+  type: 'cw_event',
+  callsign: 'SM5ABC',
+  key_down: true,
+  duration_ms: 48,
+  timestamp_ms: 1234,
+  sequence: 42
+}
+```
+
+**Why JSON over WebSocket?**
+- ✅ Browsers speak WebSocket natively
+- ✅ Human-readable for debugging
+- ✅ Self-contained packets (no state tracking)
+- ✅ Timestamp principles still apply (burst-resistant)
+
+**Relationship to test_implementation:**
+- Uses same **timing principles** (timestamps, jitter buffer)
+- Different **transport** (WebSocket vs raw TCP)
+
+### Why Keep Both Duration AND Timestamp?
+
+The protocol includes **both** `duration_ms` and `timestamp_ms` fields, even though duration could theoretically be calculated from timestamp differences. This is intentional:
+
+**Reasons to keep both fields:**
+
+1. **Self-contained packets** - Each event is independently understandable
+2. **Decoder friendliness** - Direct access to duration for dit/dah classification
+3. **First packet handling** - No special case (first packet has explicit duration)
+4. **Debugging ease** - Both values visible without calculation
+5. **Bandwidth negligible** - Extra 1-2 bytes = 20 bytes/sec (~0.0025% of WiFi)
+6. **Protocol clarity** - Clear semantic meaning (state + duration + when)
+7. **UDP compatibility** - Similar structure to UDP-FEC variant (packet loss safe)
+8. **Stateless processing** - No need to track previous timestamps
+
+**Calculated duration approach (NOT used):**
+```javascript
+// Would require state tracking
+duration = currentTimestamp - previousTimestamp;
+// Problems: First packet? What if out-of-order? More complex.
+```
+
+**Explicit duration approach (current):**
+```javascript
+// Self-contained, works immediately
+const isDit = (event.duration_ms < 80);  // Direct classification
+// No state, no edge cases, simple.
+```
+
+**Bandwidth comparison:**
+- Current: ~50 bytes per event
+- Without duration: ~48 bytes per event  
+- Savings: 2 bytes = **0.16 Kbps per user** (negligible)
+
+The engineering simplicity and robustness justify the minimal bandwidth cost.
+
+---
+
+## Web Platform Implementation (Browser-Based)
+
+⚠️ **Note:** The following sections describe a browser-based implementation of the TCP-TS protocol. This is experimental and currently has limitations with multi-user support on free hosting tiers.
+
+### Features
 
 ✅ **TCP Timestamp Protocol** - Burst-resistant timing perfect for WiFi/Internet  
 ✅ **Multi-user Rooms** - Practice with multiple operators in named rooms  
@@ -14,9 +114,9 @@ Multi-user web-based Morse code practice platform using TCP Timestamp protocol f
 ✅ **No Installation** - Works in any modern browser  
 ⚠️ **Free Tier Hosting** - Single-user testing only (multi-user needs paid plan or VPS)
 
-**Status:** Frontend complete, multi-user relay blocked by Cloudflare free tier limitation.  
+**Status:** Frontend complete, multi-user relay blocked by Cloudflare free tier limitation.
 
-## Architecture Overview
+### Architecture
 
 **Simple Browser-to-Browser Relay (Pass-Through)**
 
@@ -27,7 +127,7 @@ Multi-user web-based Morse code practice platform using TCP Timestamp protocol f
 ├──────────────────┤                    ├──────────────────┤
 │ • Keyboard: Z/X  │                    │ • Receives events│
 │ • Text-to-CW     │                    │ • Jitter buffer  │
-│ • Paddle to CW
+│ • Paddle to CW   │                    │                  │
 │ • Generate events│                    │ • Sidetone plays │
 │ • TX sidetone    │                    │ • Decoder shows  │
 └────────┬─────────┘                    └────────▲─────────┘
@@ -56,31 +156,9 @@ Multi-user web-based Morse code practice platform using TCP Timestamp protocol f
 - No protocol translation needed
 - Pure JavaScript/WebSocket architecture
 
-## Why TCP Timestamp Protocol?
+### Use Cases
 
-**TCP Timestamp Protocol Advantages:**
-- ✅ **Events, not audio**: Send key state + duration + timestamp
-- ✅ **Absolute timing**: Each event has precise playout time
-- ✅ **Burst-resistant**: WiFi/TCP bursts don't affect timing
-- ✅ **Low bandwidth**: ~50 bytes/event vs ~5KB/sec audio
-- ✅ **Perfect timing**: ±1ms accuracy (vs ±50ms for audio)
-- ✅ **Decoder-friendly**: Precise timing = better decoding
-
-**Event Format:**
-```javascript
-{
-  type: 'cw_event',
-  callsign: 'SM5ABC',
-  key_down: true,          // true=DOWN, false=UP
-  duration_ms: 48,         // How long key was in this state
-  timestamp_ms: 1234,      // When event occurred (ms since session start)
-  sequence: 42             // Packet sequence number
-}
-```
-
-## Use Cases
-
-### 1. Multi-User Practice Rooms
+#### 1. Multi-User Practice Rooms
 ```
 Room: "main"
   └─ SM5ABC (25 WPM)
@@ -92,7 +170,7 @@ All users hear everyone's CW with decoder
 The sender shall only hear its own sidetone from client (not from browser due to delay!)
 ```
 
-### 2. Training Sessions
+#### 2. Training Sessions
 ```
 Room: "training-15wpm"
   └─ Instructor (sends practice text)
@@ -100,14 +178,14 @@ Room: "training-15wpm"
   └─ Students can also practice
 ```
 
-### 3. Contest Simulation
+#### 3. Contest Simulation
 ```
 Room: "contest"
   └─ Multiple stations sending rapid exchanges
   └─ Test pileup handling and speed copying
 ```
 
-## Project Structure
+### Project Structure
 
 ```
 web_platform_tcp/
@@ -137,9 +215,11 @@ web_platform_tcp/
     └── package.json             # Dependencies
 ```
 
-## Technical Design
+### Browser-Specific Technical Implementation
 
-### Protocol Layer (TCP Timestamp)
+<!--
+
+#### Protocol Layer (TCP Timestamp)
 
 **Packet Structure (WebSocket JSON):**
 ```javascript
@@ -270,37 +350,11 @@ function broadcastToRoom(roomId, event, senderWs) {
 - ✅ ~50 bytes per event
 - ✅ Scales easily on Cloudflare free tier
 
-## Protocol Design
+-->
 
-**WebSocket JSON Events (Browser-to-Browser)**
+-->
 
-This platform uses **pure WebSocket JSON messaging** between browsers. The "TCP-TS" name refers to the timing principles (timestamps for burst-resistance), not binary TCP protocol.
-
-**Event format:**
-```javascript
-{
-  type: 'cw_event',
-  callsign: 'SM5ABC',
-  key_down: true,
-  duration_ms: 48,
-  timestamp_ms: 1234,
-  sequence: 42
-}
-```
-
-**Why JSON over WebSocket (not binary TCP-TS)?**
-- ✅ Browsers speak WebSocket natively
-- ✅ Cloudflare Workers handle WebSocket
-- ✅ Human-readable for debugging
-- ✅ Same format browser → worker → browser (pass-through)
-- ✅ Timestamp principles still apply (burst-resistant)
-
-**Relationship to test_implementation:**
-- Uses same **timing principles** (timestamps, jitter buffer)
-- Different **transport** (WebSocket vs raw TCP)
-- Browser version = web-friendly implementation of same concepts
-
-## Browser Requirements
+### Browser Requirements
 
 - ✅ Chrome/Edge 56+
 - ✅ Firefox 52+
@@ -312,71 +366,20 @@ This platform uses **pure WebSocket JSON messaging** between browsers. The "TCP-
 - Web Audio API (sidetone generation)
 - Keyboard events (manual keying)
 
-## Performance Characteristics
+### Deployment
 
-**Bandwidth per user:**
-- Sending 25 WPM: ~10 events/sec = 500 bytes/sec
-- Receiving 3 users: ~1500 bytes/sec
-- **Total: ~2 KB/sec** (vs 40 KB/sec for WebRTC audio)
+<!--
 
-**Latency:**
-- WebSocket relay: ~20-50ms
-- Jitter buffer: 100-500ms (configurable)
-- Audio scheduling: <1ms precision
-- **Total: 120-200ms** (consistent, predictable)
+#<!--
 
-**CPU usage:**
-- Web Audio API: ~2-5%
-- Decoder: ~1-2%
-- WebSocket: <1%
-- **Total: <10% per room**
-
-## Deployment
-
-### ⚠️ Cloudflare Workers Limitation (Multi-User)
-
-**Critical Issue Discovered:** Cloudflare Workers free tier **cannot relay WebSocket messages** between multiple users.
-
-**Error:** `Cannot perform I/O on behalf of a different request`
-
-**Root Cause:**
-- WebSocket objects are bound to the request that created them
-- Cannot store WebSocket objects globally for broadcast
-- Workers free tier does not allow storing I/O objects across requests
-
-**Solutions:**
-
-1. **Cloudflare Durable Objects** ($5/month)
-   - Stateful WebSocket storage
-   - Proper multi-user support
-   - Global deployment
-   - [See Documentation](https://developers.cloudflare.com/durable-objects/)
-
-2. **Node.js + Socket.IO** (VPS or local)
-   - Simple relay server (~30 min implementation)
-   - Full control over WebSocket handling
-   - Perfect for European users (Frankfurt VPS = ~20ms)
-   - See `PLATFORM_COMPARISON.md` for details
-
-3. **Current Echo Mode** (Testing only)
-   - Worker echoes events back to sender
-   - Good for testing protocol
-   - Not suitable for multi-user
-
-**Recommendation:**
-- **Python client users** (cw_studio_client_with_sidetone.py): Node.js server
-- **Web browser users**: Cloudflare Durable Objects or Node.js
-- **Single region** (Europe): Node.js VPS
-- **Global users**: Cloudflare Durable Objects
-
-### Cloudflare Pages (Frontend)
+#### Cloudflare Pages (Frontend)
 ```bash
 cd public
 wrangler pages deploy . --project-name=cw-studio-tcp
 # URL: https://cw-studio-tcp.pages.dev
 ```
 
-### Cloudflare Worker (Relay) - ⚠️ Echo Mode Only
+#### Cloudflare Worker (Relay) - ⚠️ Echo Mode Only
 ```bash
 cd worker
 npm install
@@ -390,103 +393,27 @@ wrangler deploy
 - Durable Objects: $5/month (multi-user)
 - Node.js VPS: $5-10/month (alternative)
 
-## Development Roadmap
+-->
 
-### Phase 1: Core Functionality (MVP)
-- [x] Project structure
-- [x] Cloudflare Worker relay (echo mode - **multi-user blocked by free tier limitation**)
-- [x] Frontend landing page
-- [x] Room interface with manual keying
-- [x] TCP-TS client (WebSocket)
-- [x] Jitter buffer (timestamp-based)
-- [x] Audio sidetone (Web Audio API)
-- [x] Basic CW decoder
-- [ ] **Multi-user relay** (needs Durable Objects or Node.js)
-
-### Phase 2: Enhanced Features
-- [ ] Text-to-CW automated sending
-- [ ] WPM estimation and display
-- [ ] User list in room
-- [ ] Volume control per user
-- [ ] Frequency selection per user
-- [ ] Statistics (packets sent/received)
-
-### Phase 3: Advanced Features
-- [ ] Recording/playback of sessions
-- [ ] Practice drills library
-- [ ] QSO templates (CQ, contest exchange)
-- [ ] Mobile-optimized interface
-- [ ] Local Python receiver compatibility
-
-## Comparison with WebRTC Version
-
-| Feature | WebRTC Audio | TCP-TS Events |
-|---------|--------------|---------------|
-| Bandwidth | 40 KB/s | 2 KB/s |
-| Latency | 70-140ms | 120-200ms |
-| Timing Precision | ±50ms | ±1ms |
-| Burst Resistance | ❌ | ✅ |
-| Decoder Accuracy | Medium | High |
-| CPU Usage | Medium | Low |
-| Scalability | Mesh (2-8) | Relay (100+) |
-| Protocol | WebRTC | TCP-TS |
-
-**Verdict:** TCP-TS is better for CW practice due to precise timing and scalability.
-
-## Contributing
-
-1. Fork repository
-2. Create feature branch
-3. Test locally with `wrangler dev`
-4. Submit pull request
-
-## License
-
-MIT License - see main repository LICENSE file
-
-## Credits
-
-- **Author:** Tomas (SM0ONR)
-- **Project:** Duration-Encoded CW Protocol
-- **Protocol:** TCP Timestamp (burst-resistant)
-- **Repository:** https://github.com/tompatulpan/duration-encoded-cw-protocol
+---
 
 ## Resources
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed system design
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment instructions
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment instructions  
 - [PLATFORM_COMPARISON.md](PLATFORM_COMPARISON.md) - Cloudflare vs Node.js comparison
 - [TESTING.md](TESTING.md) - Testing procedures and results
 - [../test_implementation/](../test_implementation/) - Python protocol implementation
+
+## Related Documentation
+
 - [Cloudflare Workers Docs](https://developers.cloudflare.com/workers/)
-- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/) - Required for multi-user
+- [Cloudflare Durable Objects](https://developers.cloudflare.com/durable-objects/)
 - [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API)
 
 ## Known Limitations
 
-### Multi-User WebSocket Relay
-
-**Issue:** Cloudflare Workers free tier cannot relay WebSocket messages between users.
-
-**Symptoms:**
-```
-Error: Cannot perform I/O on behalf of a different request.
-I/O objects (such as streams, request/response bodies, and others) 
-created in the context of one request handler cannot be accessed 
-from a different request's handler.
-```
-
-**Impact:**
-- ✅ Single user can connect and send events (echo mode works)
-- ❌ Cannot broadcast to other users in same room
-- ❌ Multi-user practice rooms non-functional on free tier
-
-**Workarounds:**
-1. **Upgrade to Durable Objects** ($5/month) - Recommended for web users
-2. **Deploy Node.js relay server** (VPS or local) - Recommended for Python clients
-3. **Use Python clients directly** (test_implementation/cw_studio_client_with_sidetone.py)
-
-See `PLATFORM_COMPARISON.md` for detailed analysis of solutions.
+⚠️ **Multi-User WebSocket Relay:** Cloudflare Workers free tier cannot relay WebSocket messages between users. Requires Durable Objects ($5/mo) or Node.js server. See PLATFORM_COMPARISON.md for details.
 
 ---
 

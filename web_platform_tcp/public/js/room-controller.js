@@ -8,7 +8,7 @@
 // Configuration
 const WORKER_URL = location.hostname === 'localhost'
   ? 'ws://localhost:8787'
-  : 'wss://cw-studio-relay.your-subdomain.workers.dev';
+  : 'wss://cw-studio-relay.data4-9de.workers.dev';
 
 // Parse URL parameters
 const urlParams = new URLSearchParams(window.location.search);
@@ -65,6 +65,9 @@ async function init() {
   // Setup UI event listeners
   setupUI();
   
+  // Setup audio permission handler
+  setupAudioPermission();
+  
   // Connect to server
   try {
     await client.connect(roomId, callsign);
@@ -95,8 +98,8 @@ function setupCallbacks() {
   };
   
   client.onPeerLeft = (data) => {
-    console.log('[Room] Peer left:', data.peerId);
-    removeUser(data.peerId);
+    console.log('[Room] Peer left:', data.callsign, data.peerId);
+    removeUser(data.peerId, data.callsign);
   };
   
   client.onCwEvent = (event) => {
@@ -362,7 +365,7 @@ function addUser(peerId, callsign) {
 /**
  * Remove user from list
  */
-function removeUser(peerId) {
+function removeUser(peerId, callsign) {
   const userItem = document.querySelector(`[data-peer-id="${peerId}"]`);
   if (userItem) {
     userItem.remove();
@@ -374,11 +377,12 @@ function removeUser(peerId) {
     usersList.innerHTML = '<p>No other users yet</p>';
   }
   
-  // Cleanup audio and decoder
-  const callsign = userItem?.textContent;
+  // Cleanup audio, decoder, and jitter buffer
   if (callsign) {
+    console.log('[Room] Cleaning up state for:', callsign);
     audioHandler.removeUser(callsign);
     decoder.removeUser(callsign);
+    jitterBuffer.removeSender(callsign);
   }
 }
 
@@ -453,6 +457,30 @@ function appendDecodedText(callsign, text, wpm) {
   while (output.children.length > 100) {
     output.firstChild.remove();
   }
+}
+
+/**
+ * Setup audio permission handler
+ */
+function setupAudioPermission() {
+  const banner = document.getElementById('audioPermissionBanner');
+  const enableBtn = document.getElementById('enableAudioBtn');
+  
+  // Check if audio context is suspended
+  if (audioHandler.audioContext && audioHandler.audioContext.state === 'suspended') {
+    banner.style.display = 'block';
+  }
+  
+  // Enable audio on click
+  const enableAudio = async () => {
+    await audioHandler.resume();
+    banner.style.display = 'none';
+    console.log('[Room] Audio enabled by user');
+  };
+  
+  enableBtn.addEventListener('click', enableAudio);
+  document.body.addEventListener('click', enableAudio, { once: true });
+  document.body.addEventListener('keydown', enableAudio, { once: true });
 }
 
 /**

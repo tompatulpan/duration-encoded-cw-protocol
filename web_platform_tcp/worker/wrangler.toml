@@ -5,9 +5,16 @@ compatibility_date = "2024-12-12"
 # Workers configuration
 workers_dev = true
 
-# Resource limits (free tier)
-[limits]
-cpu_ms = 10
+# Durable Objects configuration
+[[durable_objects.bindings]]
+name = "CW_ROOM"
+class_name = "CWRoom"
+script_name = "cw-studio-relay"
+
+# Migrations for Durable Objects (free plan requires new_sqlite_classes)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["CWRoom"]
 
 # Custom domain (optional)
 # routes = [

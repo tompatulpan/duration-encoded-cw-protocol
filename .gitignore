@@ -165,8 +165,18 @@ DOC/
 web_platform/
 
 # Web platform - Node.js and development files
-web_platform/node_modules/
-web_platform/.wrangler/
-web_platform/package-lock.json
-web_platform/.dev.vars
+node_modules/
+.wrangler/
+package-lock.json
+.dev.vars
 web_platform/dist/
+
+# Web platform TCP - Node.js and JavaScript development files
+web_platform_tcp/node_modules/
+web_platform_tcp/.wrangler/
+web_platform_tcp/package-lock.json
+web_platform_tcp/.dev.vars
+web_platform_tcp/dist/
+*.js.map
+*.min.js
+*.bundle.js
