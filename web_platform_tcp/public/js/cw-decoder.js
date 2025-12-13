@@ -6,6 +6,15 @@
 
 class CWDecoder {
   constructor() {
+    // Timing thresholds (in multiples of dit duration)
+    // Adjust these values to tune decoder sensitivity
+    this.TIMING_CONFIG = {
+      ditDahThreshold: 2.0,      // Threshold between dit and dah (2× dit = dah boundary)
+      letterSpaceThreshold: 3.0, // Minimum gap to trigger letter space (between 3T and 4T)
+      wordSpaceThreshold: 7.0,   // Minimum gap to trigger word space (7T = standard word space)
+      avgDitSmoothFactor: 0.9    // Exponential moving average factor (0.9 = 90% old, 10% new)
+    };
+    
     // Morse code table
     this.morseTable = {
       '.-': 'A',    '-...': 'B',  '-.-.': 'C',  '-..': 'D',
@@ -62,63 +71,66 @@ class CWDecoder {
     
     if (key_down) {
       // For timestamp protocol: Check timestamp gap to detect letter/word spaces
-      // Only check if gap is larger than a full dit+dah cycle (4× dit = dit + element_space + dah + element_space)
-      // This avoids false detection during normal character formation
-      if (timestampGap > user.avgDit * 4) {
-        // Word space: > 6× dit (accounts for letter space threshold)
-        if (timestampGap > user.avgDit * 6) {
-          console.log('[Decoder]', callsign, 'word space detected via timestamp gap:', timestampGap + 'ms', '(threshold:', (user.avgDit * 6).toFixed(0) + 'ms)');
+      // Morse timing model: intra-symbol space = 1T, letter space = 3T, word space = 7T
+      // Use configurable threshold (default 3.5T): between longest within-character gap (4T) and letter space minimum (3T)
+      if (timestampGap > user.avgDit * this.TIMING_CONFIG.letterSpaceThreshold) {
+        // Word space: configurable threshold (default 7T = standard word space)
+        if (timestampGap > user.avgDit * this.TIMING_CONFIG.wordSpaceThreshold) {
+          console.log('[Decoder]', callsign, 'word space detected via timestamp gap:', timestampGap + 'ms', '(threshold:', (user.avgDit * this.TIMING_CONFIG.wordSpaceThreshold).toFixed(0) + 'ms)');
           this.flushCharacter(callsign, user);
           if (this.onDecodedWord) {
             this.onDecodedWord(callsign, ' ');
           }
         }
-        // Letter space: > 4× dit (just finished a character)
+        // Letter space: configurable threshold (default 3.5T)
         else {
-          console.log('[Decoder]', callsign, 'letter space detected via timestamp gap:', timestampGap + 'ms', '(threshold:', (user.avgDit * 4).toFixed(0) + 'ms)');
+          console.log('[Decoder]', callsign, 'letter space detected via timestamp gap:', timestampGap + 'ms', '(threshold:', (user.avgDit * this.TIMING_CONFIG.letterSpaceThreshold).toFixed(0) + 'ms)');
           this.flushCharacter(callsign, user);
         }
       }
+      // Otherwise it's intra-symbol space (1T) - continue building current character
       
       // Key down event - duration_ms is how long the key was DOWN (dit or dah)
       const elementDuration = duration_ms;
       
       // Classify as dit or dah
-      const threshold = user.avgDit * 2; // Threshold at 2x dit length
+      const threshold = user.avgDit * this.TIMING_CONFIG.ditDahThreshold;
       const isDit = elementDuration < threshold;
       
       user.buffer.push(isDit ? '.' : '-');
       
-      // Update average dit time (exponential moving average)
-      if (isDit) {
-        user.avgDit = user.avgDit * 0.9 + elementDuration * 0.1;
-        user.wpm = Math.round(1200 / user.avgDit);
-      }
+      // Update average dit time from both dits and dahs (exponential moving average)
+      // Dits: use duration directly, Dahs: divide by 3 to get dit equivalent
+      const ditEquivalent = isDit ? elementDuration : elementDuration / 3;
+      user.avgDit = user.avgDit * this.TIMING_CONFIG.avgDitSmoothFactor + ditEquivalent * (1 - this.TIMING_CONFIG.avgDitSmoothFactor);
+      user.wpm = Math.round(1200 / user.avgDit);
       
       console.log('[Decoder]', callsign, 'element:', isDit ? 'dit' : 'dah', elementDuration + 'ms', 'buffer:', user.buffer.join(''), 'wpm:', user.wpm);
     } else {
       // Key up event - duration_ms is the SPACING after the element
-      // With timestamp protocol, spacing is constant (element_space) and word spaces 
-      // are detected via timestamp gaps on DOWN events (above)
+      // Morse timing model: intra-symbol space = 1T, letter space = 3T, word space = 7T
+      // With timestamp protocol, duration_ms is constant (intra-symbol space) and
+      // letter/word spaces are detected via timestamp gaps on DOWN events (above)
       const spaceDuration = duration_ms;
       
       console.log('[Decoder]', callsign, 'space:', spaceDuration + 'ms', 'avgDit:', user.avgDit.toFixed(1) + 'ms');
       
       // Legacy: Also check duration_ms for duration-based protocol compatibility
-      // Word space detection: > 5× dit (between letter_space and word_space)
-      if (spaceDuration > user.avgDit * 5) {
-        console.log('[Decoder]', callsign, 'word space detected via duration:', spaceDuration + 'ms', '(threshold:', (user.avgDit * 5).toFixed(0) + 'ms)');
+      // Word space detection: > 5T (between letter space 3T and word space 7T)
+      const durationWordThreshold = (this.TIMING_CONFIG.letterSpaceThreshold + this.TIMING_CONFIG.wordSpaceThreshold) / 2; // Midpoint
+      if (spaceDuration > user.avgDit * durationWordThreshold) {
+        console.log('[Decoder]', callsign, 'word space detected via duration:', spaceDuration + 'ms', '(threshold:', (user.avgDit * durationWordThreshold).toFixed(0) + 'ms)');
         this.flushCharacter(callsign, user);
         if (this.onDecodedWord) {
           this.onDecodedWord(callsign, ' ');
         }
       }
-      // Letter space detection: > 2× dit (between element_space and letter_space)
-      else if (spaceDuration > user.avgDit * 2) {
-        console.log('[Decoder]', callsign, 'letter space detected via duration:', spaceDuration + 'ms', '(threshold:', (user.avgDit * 2).toFixed(0) + 'ms)');
+      // Letter space detection: > ditDahThreshold (between intra-symbol 1T and letter space threshold)
+      else if (spaceDuration > user.avgDit * this.TIMING_CONFIG.ditDahThreshold) {
+        console.log('[Decoder]', callsign, 'letter space detected via duration:', spaceDuration + 'ms', '(threshold:', (user.avgDit * this.TIMING_CONFIG.ditDahThreshold).toFixed(0) + 'ms)');
         this.flushCharacter(callsign, user);
       }
-      // Otherwise it's element_space (1× dit) - continue building current character
+      // Otherwise it's intra-symbol space (1T) - continue building current character
       
       // Set timeout to flush last character if no more events come
       if (user.flushTimer) {
