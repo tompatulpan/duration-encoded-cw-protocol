@@ -11,7 +11,7 @@ class CWDecoder {
     this.TIMING_CONFIG = {
       ditDahThreshold: 1.5,      // Threshold between dit and dah (1.5× dit, matches Python)
       letterSpaceThreshold: 2.5, // Letter space detection 
-      wordSpaceThreshold: 8.0,   // Word space detection
+      wordSpaceThreshold: 6.9,   // Word space detection (standard = 7× dit, detect at 5× with margin)
       avgDitSmoothFactor: 0.9    // Exponential moving average factor (0.9 = 90% old, 10% new)
     };
     
@@ -62,7 +62,9 @@ class CWDecoder {
         elementCount: 0, // Track elements for adaptive convergence
         flushTimer: null,
         senderTimelineOffset: null, // Synchronized sender timeline (for timestamp protocol)
-        lastRecvTime: Date.now() / 1000.0 // Track actual arrival time for gap detection
+        lastRecvTime: Date.now() / 1000.0, // Track actual arrival time for gap detection
+        consecutiveElementSpaces: 0, // Track manual keying pattern
+        isManualKeying: false // Flag for manual paddle keying detection
       });
       console.log('[Decoder] New user:', callsign);
     }
@@ -129,7 +131,7 @@ class CWDecoder {
       user.wpm = Math.round(1200 / user.avgDit);
       user.elementCount++; // Increment element counter
       
-      console.log('[Decoder]', callsign, 'DOWN event - element:', isDit ? 'dit' : 'dah', elementDuration + 'ms', 'ts:', timestamp_ms + 'ms', 'buffer:', user.buffer.join(''), 'wpm:', user.wpm, 'avgDit:', user.avgDit.toFixed(1) + 'ms');
+      console.log('[Decoder]', callsign, 'DOWN event - element:', isDit ? 'dit' : 'dah', elementDuration + 'ms', 'ts:', timestamp_ms + 'ms', 'buffer:', user.buffer.join(''), 'wpm:', user.wpm, 'avgDit:', user.avgDit.toFixed(1) + 'ms', user.isManualKeying ? '(manual)' : '(auto)');
     } else {
       // Key UP event - duration_ms is the SPACING duration
       // This is the CORRECT way to detect character boundaries (like Python decoder)
@@ -140,6 +142,21 @@ class CWDecoder {
       // Spacing detection based on UP duration (matches Python decoder logic)
       const letterSpaceThreshold = user.avgDit * this.TIMING_CONFIG.letterSpaceThreshold;
       const wordSpaceThreshold = user.avgDit * this.TIMING_CONFIG.wordSpaceThreshold;
+      const elementSpaceThreshold = user.avgDit * 1.5; // ~1 dit for element space
+      
+      // Detect manual keying pattern (consistent element spacing ~1 dit)
+      if (spaceDuration < elementSpaceThreshold) {
+        user.consecutiveElementSpaces++;
+        if (user.consecutiveElementSpaces >= 3 && !user.isManualKeying) {
+          user.isManualKeying = true;
+          console.log('[Decoder]', callsign, 'Manual paddle keying detected');
+        }
+      } else {
+        // Reset manual keying detection on letter/word space
+        if (user.consecutiveElementSpaces > 0) {
+          user.consecutiveElementSpaces = 0;
+        }
+      }
 
       // DIAGNOSTIC: Log threshold calculations
       console.log('[Decoder] DIAGNOSTIC:', callsign, 
@@ -147,12 +164,14 @@ class CWDecoder {
                   'avgDit=' + user.avgDit.toFixed(1) + 'ms',
                   'letterThreshold=' + letterSpaceThreshold.toFixed(1) + 'ms (' + this.TIMING_CONFIG.letterSpaceThreshold + '× dit)',
                   'wordThreshold=' + wordSpaceThreshold.toFixed(1) + 'ms (' + this.TIMING_CONFIG.wordSpaceThreshold + '× dit)',
-                  'buffer=' + user.buffer.join(''));
+                  'buffer=' + user.buffer.join(''),
+                  user.isManualKeying ? '(manual)' : '(auto)');
 
       if (spaceDuration > wordSpaceThreshold) {
         // Word space
         console.log('[Decoder]', callsign, 'WORD SPACE detected:', spaceDuration + 'ms', '(threshold:', wordSpaceThreshold.toFixed(0) + 'ms)', 'avgDit:', user.avgDit.toFixed(1) + 'ms');
         this.flushCharacter(callsign, user);
+        user.isManualKeying = false; // Reset on word boundaries
         if (this.onWordSpace) {
           this.onWordSpace(callsign);
         }
@@ -160,15 +179,22 @@ class CWDecoder {
         // Letter space
         console.log('[Decoder]', callsign, 'LETTER SPACE detected:', spaceDuration + 'ms', '(threshold:', letterSpaceThreshold.toFixed(0) + 'ms)', 'avgDit:', user.avgDit.toFixed(1) + 'ms');
         this.flushCharacter(callsign, user);
+        user.isManualKeying = false; // Reset on letter boundaries
       } else {
         // Intra-element space - continue building current character
         // Set timeout to flush last character if no more events come (end of transmission)
+        // For manual keying, use shorter timeout since spacing is consistent
+        const timeoutMs = user.isManualKeying 
+          ? letterSpaceThreshold * 1.5 
+          : letterSpaceThreshold * 2;
+        
         if (user.flushTimer) {
           clearTimeout(user.flushTimer);
         }
         user.flushTimer = setTimeout(() => {
           this.flushCharacter(callsign, user);
-        }, user.avgDit * 5); // Flush after 5× dit of inactivity
+          user.isManualKeying = false; // Reset after character completion
+        }, timeoutMs);
       }
     }
   }
@@ -177,7 +203,12 @@ class CWDecoder {
    * Flush current character buffer
    */
   flushCharacter(callsign, user) {
-    if (user.buffer.length === 0) return;
+    console.log('[Decoder] flushCharacter called for:', callsign, 'buffer:', user.buffer.join(''), 'length:', user.buffer.length);
+    
+    if (user.buffer.length === 0) {
+      console.log('[Decoder] Buffer empty, nothing to flush');
+      return;
+    }
     
     const pattern = user.buffer.join('');
     const char = this.morseTable[pattern] || '?';
@@ -185,7 +216,10 @@ class CWDecoder {
     console.log('[Decoder]', callsign, 'DECODED:', pattern, '→', char, 'wpm:', user.wpm);
     
     if (this.onDecodedChar) {
+      console.log('[Decoder] Calling onDecodedChar callback');
       this.onDecodedChar(callsign, char, user.wpm);
+    } else {
+      console.log('[Decoder] ERROR: onDecodedChar callback is not set!');
     }
     
     user.buffer = [];

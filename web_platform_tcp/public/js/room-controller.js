@@ -27,9 +27,13 @@ let ditMs = 1200 / wpm;
 let isKeying = false;
 let keyDownTime = 0;
 
-// Paddle state (which paddle is currently pressed)
+// Iambic keyer state (Mode B)
 let ditPressed = false;
 let dahPressed = false;
+let keyerState = 'IDLE'; // IDLE, DIT, DAH
+let ditMemory = false;
+let dahMemory = false;
+let keyingLoopActive = false;
 
 // Morse table for text-to-CW
 const morseTable = {
@@ -114,7 +118,9 @@ function setupCallbacks() {
   
   // Jitter buffer callback
   jitterBuffer.onPlayEvent = (event) => {
-    console.log('[Room] Playing event from jitter buffer:', event.callsign);
+    console.log('[Room] ===== PLAYOUT EVENT =====');
+    console.log('[Room] Playing event from jitter buffer:', event);
+    console.log('[Room] Callsign:', event.callsign, 'Key:', event.key_down, 'Duration:', event.duration_ms);
     
     // Only play audio for remote users (not your own echo)
     // Local sidetone is already played immediately in handleKeyDown/Up
@@ -125,7 +131,9 @@ function setupCallbacks() {
     }
     
     // Decode (for display)
+    console.log('[Room] Calling decoder.processEvent()');
     decoder.processEvent(event);
+    console.log('[Room] Decoder called');
     
     // Update stats
     updateStats();
@@ -133,10 +141,12 @@ function setupCallbacks() {
   
   // Decoder callbacks
   decoder.onDecodedChar = (callsign, char, wpm) => {
+    console.log('[Room] Decoded character:', callsign, char, wpm);
     appendDecodedText(callsign, char, wpm);
   };
   
   decoder.onWordSpace = (callsign) => {
+    console.log('[Room] Word space:', callsign);
     appendDecodedText(callsign, ' ', 0);
   };
 }
@@ -247,11 +257,14 @@ async function handlePaddlePress(type) {
   if (type === 'dit') {
     if (ditPressed) return; // Already pressed
     ditPressed = true;
-    await sendElement(ditMs);
   } else if (type === 'dah') {
     if (dahPressed) return; // Already pressed
     dahPressed = true;
-    await sendElement(ditMs * 3);
+  }
+  
+  // Start keyer if not already running
+  if (!keyingLoopActive) {
+    startIambicKeyer();
   }
 }
 
@@ -267,25 +280,175 @@ function handlePaddleRelease(type) {
 }
 
 /**
+ * Iambic Keyer (Mode B) - matches Python implementation
+ * Implements proper paddle memory and automatic alternation
+ */
+async function startIambicKeyer() {
+  if (keyingLoopActive) return;
+  
+  keyingLoopActive = true;
+  keyerState = 'IDLE';
+  ditMemory = false;
+  dahMemory = false;
+  
+  while (true) {
+    // IDLE state - waiting for paddle press
+    if (keyerState === 'IDLE') {
+      if (ditPressed) {
+        ditMemory = false;
+        dahMemory = false;
+        keyerState = 'DIT';
+        
+        // Send dit
+        await sendElement(ditMs);
+        
+        // Check if dah was pressed during dit (Mode B memory)
+        if (dahPressed) {
+          dahMemory = true;
+        }
+        
+      } else if (dahPressed) {
+        ditMemory = false;
+        dahMemory = false;
+        keyerState = 'DAH';
+        
+        // Send dah
+        await sendElement(ditMs * 3);
+        
+        // Check if dit was pressed during dah (Mode B memory)
+        if (ditPressed) {
+          ditMemory = true;
+        }
+        
+      } else {
+        // No paddles pressed, exit keyer
+        break;
+      }
+    }
+    
+    // DIT state - just sent a dit
+    else if (keyerState === 'DIT') {
+      // Sample paddles (memory from element space)
+      if (ditPressed) {
+        ditMemory = true;
+      }
+      if (dahPressed) {
+        dahMemory = true;
+      }
+      
+      // Decide what's next
+      if (dahMemory) {
+        dahMemory = false;
+        keyerState = 'DAH';
+        
+        // Send dah
+        await sendElement(ditMs * 3);
+        
+        // Mode B: Check for dit during dah
+        if (ditPressed) {
+          ditMemory = true;
+        }
+        
+      } else if (ditMemory) {
+        ditMemory = false;
+        keyerState = 'DIT';
+        
+        // Send dit
+        await sendElement(ditMs);
+        
+        // Mode B: Check for dah during dit
+        if (dahPressed) {
+          dahMemory = true;
+        }
+        
+      } else {
+        // No memory, return to idle
+        keyerState = 'IDLE';
+      }
+    }
+    
+    // DAH state - just sent a dah
+    else if (keyerState === 'DAH') {
+      // Sample paddles (memory from element space)
+      if (ditPressed) {
+        ditMemory = true;
+      }
+      if (dahPressed) {
+        dahMemory = true;
+      }
+      
+      // Decide what's next
+      if (ditMemory) {
+        ditMemory = false;
+        keyerState = 'DIT';
+        
+        // Send dit
+        await sendElement(ditMs);
+        
+        // Mode B: Check for dah during dit
+        if (dahPressed) {
+          dahMemory = true;
+        }
+        
+      } else if (dahMemory) {
+        dahMemory = false;
+        keyerState = 'DAH';
+        
+        // Send dah
+        await sendElement(ditMs * 3);
+        
+        // Mode B: Check for dit during dah
+        if (ditPressed) {
+          ditMemory = true;
+        }
+        
+      } else {
+        // No memory, return to idle
+        keyerState = 'IDLE';
+      }
+    }
+  }
+  
+  keyingLoopActive = false;
+  keyerState = 'IDLE';
+}
+
+/**
  * Send a single CW element (dit or dah)
  */
 async function sendElement(duration) {
-  if (isKeying) return; // Prevent overlapping elements
-  
-  isKeying = true;
-  
   // Key down
   client.sendCwEvent(true, duration);
   audioHandler.setKey(callsign, true);
+  
+  // Also decode our own keying locally
+  const downEvent = {
+    callsign: callsign,
+    key_down: true,
+    duration_ms: duration,
+    timestamp_ms: Date.now()
+  };
+  console.log('[Room] Local DOWN event:', downEvent);
+  decoder.processEvent(downEvent);
+  
   await sleep(duration);
   
   // Key up (element space)
   const elementSpace = ditMs;
   client.sendCwEvent(false, elementSpace);
   audioHandler.setKey(callsign, false);
-  await sleep(elementSpace);
   
-  isKeying = false;
+  // Also decode the UP event locally
+  const upEvent = {
+    callsign: callsign,
+    key_down: false,
+    duration_ms: elementSpace,
+    timestamp_ms: Date.now()
+  };
+  console.log('[Room] Local UP event:', upEvent);
+  decoder.processEvent(upEvent);
+  
+  await sleep(elementSpace);
 }
 
 /**
@@ -313,6 +476,15 @@ async function sendText(text) {
         // Key down
         client.sendCwEvent(true, duration);
         audioHandler.setKey(callsign, true);
+        
+        // Decode locally
+        decoder.processEvent({
+          callsign: callsign,
+          key_down: true,
+          duration_ms: duration,
+          timestamp_ms: Date.now()
+        });
+        
         await sleep(duration);
         
         // Key up - send element space or letter space
@@ -320,6 +492,15 @@ async function sendText(text) {
         const space = isLastElement ? (ditMs * 3) : ditMs; // Letter space (3 units) or element space (1 unit)
         client.sendCwEvent(false, space);
         audioHandler.setKey(callsign, false);
+        
+        // Decode locally
+        decoder.processEvent({
+          callsign: callsign,
+          key_down: false,
+          duration_ms: space,
+          timestamp_ms: Date.now()
+        });
+        
         await sleep(space);
       }
     }
@@ -328,6 +509,15 @@ async function sendText(text) {
     if (wordIdx < words.length - 1) {
       const wordSpace = ditMs * 7; // Full word space
       client.sendCwEvent(false, wordSpace);
+      
+      // Decode word space locally
+      decoder.processEvent({
+        callsign: callsign,
+        key_down: false,
+        duration_ms: wordSpace,
+        timestamp_ms: Date.now()
+      });
+      
       await sleep(wordSpace);
     }
   }
