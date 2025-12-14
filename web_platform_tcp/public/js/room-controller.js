@@ -48,7 +48,10 @@ const morseTable = {
   '4': '....-', '5': '.....', '6': '-....', '7': '--...',
   '8': '---..', '9': '----.',
   '.': '.-.-.-', ',': '--..--', '?': '..--..', '/': '-..-.',
-  '=': '-...-', '+': '.-.-.', '-': '-....-', '@': '.--.-.'
+  '=': '-...-', '<AR>': '.-.-.', '-': '-....-', '@': '.--.-.',
+  // Swedish letters
+  'Å': '.--.-', 'Ä': '.-.-', 'Ö': '---.'
+  // Note: Prosigns <AR> and <SK> are decoded but not encoded from text
 };
 
 /**
@@ -169,13 +172,13 @@ function setupUI() {
   dahButton.addEventListener('touchstart', (e) => { e.preventDefault(); handlePaddlePress('dah'); });
   dahButton.addEventListener('touchend', (e) => { e.preventDefault(); handlePaddleRelease('dah'); });
   
-  // Keyboard shortcuts (Z=dit, X=dah)
+  // Keyboard shortcuts (,=dit, .=dah)
   document.addEventListener('keydown', (e) => {
-    if ((e.key === 'z' || e.key === 'Z') && !ditPressed) {
+    if (e.key === ',' && !ditPressed) {
       e.preventDefault();
       handlePaddlePress('dit');
       ditButton.classList.add('active');
-    } else if ((e.key === 'x' || e.key === 'X') && !dahPressed) {
+    } else if (e.key === '.' && !dahPressed) {
       e.preventDefault();
       handlePaddlePress('dah');
       dahButton.classList.add('active');
@@ -183,11 +186,11 @@ function setupUI() {
   });
   
   document.addEventListener('keyup', (e) => {
-    if (e.key === 'z' || e.key === 'Z') {
+    if (e.key === ',') {
       e.preventDefault();
       handlePaddleRelease('dit');
       ditButton.classList.remove('active');
-    } else if (e.key === 'x' || e.key === 'X') {
+    } else if (e.key === '.') {
       e.preventDefault();
       handlePaddleRelease('dah');
       dahButton.classList.remove('active');

@@ -28,7 +28,12 @@ class CWDecoder {
       '....-': '4', '.....': '5', '-....': '6', '--...': '7',
       '---..': '8', '----.': '9',
       '.-.-.-': '.', '--..--': ',', '..--..': '?', '-..-.': '/',
-      '-...-': '=', '.-.-.': '+', '-....-': '-', '.--.-.': '@'
+      '-...-': '=', '.-.-.': '+', '-....-': '-', '.--.-.': '@',
+      // Swedish letters
+      '.--.-': 'Å', '.-.-': 'Ä',  '---.': 'Ö',
+      // Prosigns (sent as single character, no space between elements)
+      '.-.-.': '<AR>',  // End of message (dit-dah-dit-dah-dit)
+      '...-.-': '<SK>'  // End of contact (dit-dit-dit-dah-dit-dah)
     };
     
     // Per-user decoder state
