@@ -224,8 +224,8 @@ function setupUI() {
   straightKeyButton.addEventListener('touchstart', (e) => { e.preventDefault(); handleStraightKeyDown(); });
   straightKeyButton.addEventListener('touchend', (e) => { e.preventDefault(); handleStraightKeyUp(); });
   
-  // Keyboard shortcuts enabled state
-  let keyboardShortcutsEnabled = true;
+  // Keyboard shortcuts enabled state (default: disabled)
+  let keyboardShortcutsEnabled = false;
   const enableKeyboardShortcutsCheckbox = document.getElementById('enableKeyboardShortcuts');
   
   enableKeyboardShortcutsCheckbox.addEventListener('change', (e) => {
@@ -283,6 +283,41 @@ function setupUI() {
     if (text) {
       sendText(text);
     }
+  });
+  
+  // Auto-send text as you type
+  const autoSendCheckbox = document.getElementById('autoSendText');
+  const textInput = document.getElementById('textInput');
+  let autoSendTimeout = null;
+  
+  // Enter key to send text
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const text = textInput.value.trim();
+      if (text) {
+        sendText(text);
+        textInput.value = ''; // Clear after sending
+      }
+    }
+  });
+  
+  textInput.addEventListener('input', () => {
+    if (!autoSendCheckbox.checked) return;
+    
+    // Clear previous timeout
+    if (autoSendTimeout) {
+      clearTimeout(autoSendTimeout);
+    }
+    
+    // Send after 2 seconds of no typing (debounce)
+    autoSendTimeout = setTimeout(() => {
+      const text = textInput.value.trim();
+      if (text) {
+        sendText(text);
+        textInput.value = ''; // Clear after sending
+      }
+    }, 2000);
   });
   
   // Practice drills

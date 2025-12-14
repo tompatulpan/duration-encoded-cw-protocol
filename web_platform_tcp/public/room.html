@@ -56,7 +56,7 @@
                 </div>
                 <div style="margin-top: 10px;">
                     <label>
-                        <input type="checkbox" id="enableKeyboardShortcuts" checked>
+                        <input type="checkbox" id="enableKeyboardShortcuts">
                         Enable keyboard shortcuts (, . Space)
                     </label>
                 </div>
@@ -67,12 +67,16 @@
             <section class="send-section">
                 <h2>Send Text</h2>
                 <div class="send-controls">
-                    <textarea id="textInput" placeholder="Enter text to send as Morse code..." rows="5"></textarea>
+                    <textarea id="textInput" placeholder="Enter text to send as Morse code..." rows="3"></textarea>
                     <div class="send-options">
                         <label>
                             Speed:
                             <input type="range" id="wpmSlider" min="10" max="40" value="20" step="1">
                             <span id="wpmValue">20</span> WPM
+                        </label>
+                        <label>
+                            <input type="checkbox" id="autoSendText">
+                            Auto-send as you type
                         </label>
                         <button id="sendButton" class="btn-primary">Send Text</button>
                     </div>
