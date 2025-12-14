@@ -130,9 +130,9 @@ header h1 {
 .btn-key {
   background-color: var(--success-color);
   color: white;
-  font-size: 1.5em;
-  padding: 30px 50px;
-  margin: 10px;
+  font-size: 1em;
+  padding: 15px 25px;
+  margin: 5px;
 }
 
 .btn-key:active, .btn-key.active {
@@ -184,6 +184,24 @@ section {
   padding: 15px;
   border-radius: 4px;
   font-family: monospace;
+}
+
+/* Text Input */
+textarea {
+  width: 100%;
+  min-width: 500px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 1em;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--secondary-color);
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
 }
 
 .decoder-entry {

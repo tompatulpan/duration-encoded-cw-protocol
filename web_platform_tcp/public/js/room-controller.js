@@ -172,8 +172,71 @@ function setupUI() {
   dahButton.addEventListener('touchstart', (e) => { e.preventDefault(); handlePaddlePress('dah'); });
   dahButton.addEventListener('touchend', (e) => { e.preventDefault(); handlePaddleRelease('dah'); });
   
-  // Keyboard shortcuts (,=dit, .=dah)
+  // Straight key button
+  const straightKeyButton = document.getElementById('straightKeyButton');
+  let straightKeyPressed = false;
+  let straightKeyDownTime = 0;
+  
+  const handleStraightKeyDown = () => {
+    if (straightKeyPressed) return;
+    straightKeyPressed = true;
+    straightKeyDownTime = Date.now();
+    
+    // Send key down event
+    client.sendCwEvent(true, 0);  // Duration unknown yet
+    audioHandler.setKey(callsign, true);
+    straightKeyButton.classList.add('active');
+  };
+  
+  const handleStraightKeyUp = () => {
+    if (!straightKeyPressed) return;
+    straightKeyPressed = false;
+    
+    // Calculate duration
+    const duration = Date.now() - straightKeyDownTime;
+    
+    // Send key up event
+    client.sendCwEvent(false, 0);  // Space duration unknown
+    audioHandler.setKey(callsign, false);
+    straightKeyButton.classList.remove('active');
+    
+    // Decode locally (let decoder determine dit/dah from duration)
+    const downEvent = {
+      callsign: callsign,
+      key_down: true,
+      duration_ms: duration,
+      timestamp_ms: straightKeyDownTime
+    };
+    decoder.processEvent(downEvent);
+    
+    // Send minimal space for decoder
+    const upEvent = {
+      callsign: callsign,
+      key_down: false,
+      duration_ms: ditMs,  // Use standard element space
+      timestamp_ms: Date.now()
+    };
+    decoder.processEvent(upEvent);
+  };
+  
+  straightKeyButton.addEventListener('mousedown', handleStraightKeyDown);
+  straightKeyButton.addEventListener('mouseup', handleStraightKeyUp);
+  straightKeyButton.addEventListener('touchstart', (e) => { e.preventDefault(); handleStraightKeyDown(); });
+  straightKeyButton.addEventListener('touchend', (e) => { e.preventDefault(); handleStraightKeyUp(); });
+  
+  // Keyboard shortcuts enabled state
+  let keyboardShortcutsEnabled = true;
+  const enableKeyboardShortcutsCheckbox = document.getElementById('enableKeyboardShortcuts');
+  
+  enableKeyboardShortcutsCheckbox.addEventListener('change', (e) => {
+    keyboardShortcutsEnabled = e.target.checked;
+    console.log('[Room] Keyboard shortcuts:', keyboardShortcutsEnabled ? 'enabled' : 'disabled');
+  });
+  
+  // Keyboard shortcuts (,=dit, .=dah, Space=straight key)
   document.addEventListener('keydown', (e) => {
+    if (!keyboardShortcutsEnabled) return;
+    
     if (e.key === ',' && !ditPressed) {
       e.preventDefault();
       handlePaddlePress('dit');
@@ -182,10 +245,15 @@ function setupUI() {
       e.preventDefault();
       handlePaddlePress('dah');
       dahButton.classList.add('active');
+    } else if (e.key === ' ' && !straightKeyPressed) {
+      e.preventDefault();
+      handleStraightKeyDown();
     }
   });
   
   document.addEventListener('keyup', (e) => {
+    if (!keyboardShortcutsEnabled) return;
+    
     if (e.key === ',') {
       e.preventDefault();
       handlePaddleRelease('dit');
@@ -194,6 +262,9 @@ function setupUI() {
       e.preventDefault();
       handlePaddleRelease('dah');
       dahButton.classList.remove('active');
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      handleStraightKeyUp();
     }
   });
   
@@ -655,9 +726,16 @@ function appendDecodedText(callsign, text, wpm) {
   // Auto-scroll to bottom
   output.scrollTop = output.scrollHeight;
   
-  // Limit total text length per callsign (keep last 500 chars)
-  if (textSpan.textContent.length > 500) {
-    textSpan.textContent = '...' + textSpan.textContent.slice(-500);
+  // Limit to 3 lines per user
+  const lines = textSpan.textContent.split('\n');
+  if (lines.length > 3) {
+    textSpan.textContent = lines.slice(-3).join('\n');
+  }
+  
+  // Also check by word count (approximately 3 lines = ~60 words)
+  const words = textSpan.textContent.split(/\s+/);
+  if (words.length > 60) {
+    textSpan.textContent = '...' + words.slice(-60).join(' ');
   }
   
   // Limit number of callsign entries (keep last 10)

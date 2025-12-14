@@ -9,9 +9,9 @@ class CWDecoder {
     // Timing thresholds (in multiples of dit duration)
     // These values are tuned to reliably detect CW spacing with margin for timing variance
     this.TIMING_CONFIG = {
-      ditDahThreshold: 1.5,      // Threshold between dit and dah (1.5× dit, matches Python)
-      letterSpaceThreshold: 2.5, // Letter space detection 
-      wordSpaceThreshold: 6.9,   // Word space detection (standard = 7× dit, detect at 5× with margin)
+      ditDahThreshold: 2.0,      // Threshold between dit and dah
+      letterSpaceThreshold: 2.5, // Letter space detection (standard = 3× dit)
+      wordSpaceThreshold: 6.9,   // Word space detection (standard = 7× dit)
       avgDitSmoothFactor: 0.9    // Exponential moving average factor (0.9 = 90% old, 10% new)
     };
     
@@ -28,11 +28,11 @@ class CWDecoder {
       '....-': '4', '.....': '5', '-....': '6', '--...': '7',
       '---..': '8', '----.': '9',
       '.-.-.-': '.', '--..--': ',', '..--..': '?', '-..-.': '/',
-      '-...-': '=', '.-.-.': '+', '-....-': '-', '.--.-.': '@',
+      '-...-': '=', '-....-': '-', '.--.-.': '@',
       // Swedish letters
       '.--.-': 'Å', '.-.-': 'Ä',  '---.': 'Ö',
       // Prosigns (sent as single character, no space between elements)
-      '.-.-.': '<AR>',  // End of message (dit-dah-dit-dah-dit)
+      '.-.-.': '<AR>',  // End of message (dit-dah-dit-dah-dit) - also decodes as +
       '...-.-': '<SK>'  // End of contact (dit-dit-dit-dah-dit-dah)
     };
     

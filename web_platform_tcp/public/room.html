@@ -49,15 +49,25 @@
                         <span>Dah</span>
                         <small>(.)</small>
                     </button>
+                    <button id="straightKeyButton" class="btn-key straight">
+                        <span>Straight Key</span>
+                        <small>(Space)</small>
+                    </button>
                 </div>
-                <p class="help-text">Press , for dit, . for dah</p>
+                <div style="margin-top: 10px;">
+                    <label>
+                        <input type="checkbox" id="enableKeyboardShortcuts" checked>
+                        Enable keyboard shortcuts (, . Space)
+                    </label>
+                </div>
+                <p class="help-text">Press , for dit, . for dah, Space for straight key</p>
             </section>
 
             <!-- Automated Sending -->
             <section class="send-section">
                 <h2>Send Text</h2>
                 <div class="send-controls">
-                    <textarea id="textInput" placeholder="Enter text to send as Morse code..." rows="3"></textarea>
+                    <textarea id="textInput" placeholder="Enter text to send as Morse code..." rows="5"></textarea>
                     <div class="send-options">
                         <label>
                             Speed:
