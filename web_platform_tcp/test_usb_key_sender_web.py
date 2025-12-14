@@ -146,26 +146,29 @@ class SimulatedKeySender:
                     for elem_idx, element in enumerate(pattern):
                         is_last_element = (elem_idx == len(pattern) - 1)
                         
-                        # Send DOWN event
+                        # Determine spacing AFTER this element
+                        if not is_last_element:
+                            # Between elements within character: use element_space
+                            space_duration = element_space
+                        elif is_last_char:
+                            # Last element of last char in word: use word_space
+                            space_duration = word_space
+                            if self.debug:
+                                print(f"\n[DEBUG] Using word_space: {word_space:.0f}ms")
+                        else:
+                            # Last element in character: use letter_space
+                            space_duration = letter_space
+                            if self.debug:
+                                print(f"\n[DEBUG] Using letter_space: {letter_space:.0f}ms")
+                        
+                        # Send DOWN event with element duration
                         element_dur = dah_duration if element == '-' else dit_duration
                         await self.send_event(True, element_dur)
                         await asyncio.sleep(element_dur / 1000.0)
                         
-                        # Send UP event with proper spacing
-                        if is_last_element and is_last_char and not is_last_word:
-                            # Last element of last char in word (except final word): use word_space
-                            up_duration = word_space
-                            if self.debug:
-                                print(f"\n[DEBUG] Sending word_space: {word_space:.0f}ms")
-                        elif is_last_element:
-                            # Last element in character: use letter_space
-                            up_duration = letter_space
-                        else:
-                            # Between elements: use element_space
-                            up_duration = element_space
-                        
-                        await self.send_event(False, up_duration)
-                        await asyncio.sleep(up_duration / 1000.0)
+                        # Send UP event with space duration
+                        await self.send_event(False, space_duration)
+                        await asyncio.sleep(space_duration / 1000.0)
                 
                 # Print space indicator after words
                 if word_idx < 2:

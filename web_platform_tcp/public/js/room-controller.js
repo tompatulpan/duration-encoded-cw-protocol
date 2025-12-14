@@ -7,7 +7,7 @@
 
 // Configuration
 const WORKER_URL = location.hostname === 'localhost'
-  ? 'ws://localhost:8787'
+  ? 'ws://localhost:8788'
   : 'wss://cw-studio-relay.data4-9de.workers.dev';
 
 // Parse URL parameters
@@ -132,8 +132,8 @@ function setupCallbacks() {
     appendDecodedText(callsign, char, wpm);
   };
   
-  decoder.onDecodedWord = (callsign, word) => {
-    appendDecodedText(callsign, word, 0);
+  decoder.onWordSpace = (callsign) => {
+    appendDecodedText(callsign, ' ', 0);
   };
 }
 

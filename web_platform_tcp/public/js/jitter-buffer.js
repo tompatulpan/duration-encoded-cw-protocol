@@ -35,20 +35,30 @@ class JitterBuffer {
     // Get or create sender timeline
     if (!this.senderTimelines.has(event.callsign)) {
       // First event from this sender - synchronize timeline
+      // Calculate when sender's transmission started in our timeline
+      // sender_start_time = now - timestamp_ms
       this.senderTimelines.set(event.callsign, {
-        offset: now - event.timestamp_ms,
+        senderStartTime: now - event.timestamp_ms,  // When sender started (in our clock)
         firstSeen: now
       });
-      console.log('[JitterBuffer] New sender timeline for:', event.callsign);
+      console.log('[JitterBuffer] New sender timeline for:', event.callsign, 
+                  'sender_start:', (now - event.timestamp_ms).toFixed(1), 'ms');
     }
     
     const timeline = this.senderTimelines.get(event.callsign);
     
-    // Calculate absolute playout time
-    // sender_event_time = timeline_offset + timestamp
-    // playout_time = sender_event_time + buffer
-    const senderEventTime = timeline.offset + event.timestamp_ms;
+    // Calculate absolute playout time using TCP-TS algorithm:
+    // 1. sender_event_time = sender_start_time + timestamp_ms
+    // 2. playout_time = sender_event_time + buffer_ms
+    const senderEventTime = timeline.senderStartTime + event.timestamp_ms;
     const playoutTime = senderEventTime + this.bufferMs;
+    
+    // Debug: Log scheduling info
+    const scheduleDelay = playoutTime - now;
+    console.log('[JitterBuffer] Scheduling:', 
+                'ts=' + event.timestamp_ms + 'ms',
+                'playout_in=' + scheduleDelay.toFixed(1) + 'ms',
+                'queue_depth=' + (this.queue.length + 1));
     
     // Add to queue
     this.queue.push({

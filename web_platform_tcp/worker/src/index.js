@@ -105,7 +105,7 @@ export class CWRoom {
         break;
         
       case 'cw_event':
-        console.log(`[CWRoom] CW event from ${state.callsign}: ${message.key_down ? 'DOWN' : 'UP'} dur=${message.duration_ms}ms, broadcasting to ${this.peers.size - 1} other peers`);
+        console.log(`[CWRoom] CW event from ${state.callsign}: ${message.key_down ? 'DOWN' : 'UP'} dur=${message.duration_ms}ms ts=${message.timestamp_ms}ms, broadcasting to ${this.peers.size - 1} other peers`);
         
         // Broadcast to all other peers (not sender)
         this.broadcast({
