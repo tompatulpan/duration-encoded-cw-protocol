@@ -27,6 +27,10 @@ let ditMs = 1200 / wpm;
 let isKeying = false;
 let keyDownTime = 0;
 
+// Paddle state (which paddle is currently pressed)
+let ditPressed = false;
+let dahPressed = false;
+
 // Morse table for text-to-CW
 const morseTable = {
   'A': '.-',    'B': '-...',  'C': '-.-.',  'D': '-..',
@@ -141,40 +145,41 @@ function setupCallbacks() {
  * Setup UI event listeners
  */
 function setupUI() {
-  // Manual keying - Dit button
+  // Manual keying - Dit button (paddle)
   const ditButton = document.getElementById('ditButton');
-  ditButton.addEventListener('mousedown', () => handleKeyDown());
-  ditButton.addEventListener('mouseup', () => handleKeyUp());
-  ditButton.addEventListener('touchstart', (e) => { e.preventDefault(); handleKeyDown(); });
-  ditButton.addEventListener('touchend', (e) => { e.preventDefault(); handleKeyUp(); });
+  ditButton.addEventListener('mousedown', () => handlePaddlePress('dit'));
+  ditButton.addEventListener('mouseup', () => handlePaddleRelease('dit'));
+  ditButton.addEventListener('touchstart', (e) => { e.preventDefault(); handlePaddlePress('dit'); });
+  ditButton.addEventListener('touchend', (e) => { e.preventDefault(); handlePaddleRelease('dit'); });
   
-  // Manual keying - Dah button
+  // Manual keying - Dah button (paddle)
   const dahButton = document.getElementById('dahButton');
-  dahButton.addEventListener('mousedown', () => handleKeyDown());
-  dahButton.addEventListener('mouseup', () => handleKeyUp());
-  dahButton.addEventListener('touchstart', (e) => { e.preventDefault(); handleKeyDown(); });
-  dahButton.addEventListener('touchend', (e) => { e.preventDefault(); handleKeyUp(); });
+  dahButton.addEventListener('mousedown', () => handlePaddlePress('dah'));
+  dahButton.addEventListener('mouseup', () => handlePaddleRelease('dah'));
+  dahButton.addEventListener('touchstart', (e) => { e.preventDefault(); handlePaddlePress('dah'); });
+  dahButton.addEventListener('touchend', (e) => { e.preventDefault(); handlePaddleRelease('dah'); });
   
   // Keyboard shortcuts (Z=dit, X=dah)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'z' || e.key === 'Z' || e.key === 'x' || e.key === 'X') {
-      if (!isKeying) {
-        e.preventDefault();
-        handleKeyDown();
-        if (e.key === 'z' || e.key === 'Z') {
-          ditButton.classList.add('active');
-        } else {
-          dahButton.classList.add('active');
-        }
-      }
+    if ((e.key === 'z' || e.key === 'Z') && !ditPressed) {
+      e.preventDefault();
+      handlePaddlePress('dit');
+      ditButton.classList.add('active');
+    } else if ((e.key === 'x' || e.key === 'X') && !dahPressed) {
+      e.preventDefault();
+      handlePaddlePress('dah');
+      dahButton.classList.add('active');
     }
   });
   
   document.addEventListener('keyup', (e) => {
-    if (e.key === 'z' || e.key === 'Z' || e.key === 'x' || e.key === 'X') {
+    if (e.key === 'z' || e.key === 'Z') {
       e.preventDefault();
-      handleKeyUp();
+      handlePaddleRelease('dit');
       ditButton.classList.remove('active');
+    } else if (e.key === 'x' || e.key === 'X') {
+      e.preventDefault();
+      handlePaddleRelease('dah');
       dahButton.classList.remove('active');
     }
   });
@@ -236,37 +241,51 @@ function setupUI() {
 }
 
 /**
- * Handle key down (paddle pressed)
+ * Handle paddle press (dit or dah)
  */
-function handleKeyDown() {
-  if (isKeying) return;
-  
-  isKeying = true;
-  keyDownTime = Date.now();
-  
-  // Send event
-  client.sendCwEvent(true, 1); // Duration unknown yet
-  
-  // Local sidetone
-  audioHandler.setKey(callsign, true);
+async function handlePaddlePress(type) {
+  if (type === 'dit') {
+    if (ditPressed) return; // Already pressed
+    ditPressed = true;
+    await sendElement(ditMs);
+  } else if (type === 'dah') {
+    if (dahPressed) return; // Already pressed
+    dahPressed = true;
+    await sendElement(ditMs * 3);
+  }
 }
 
 /**
- * Handle key up (paddle released)
+ * Handle paddle release (dit or dah)
  */
-function handleKeyUp() {
-  if (!isKeying) return;
+function handlePaddleRelease(type) {
+  if (type === 'dit') {
+    ditPressed = false;
+  } else if (type === 'dah') {
+    dahPressed = false;
+  }
+}
+
+/**
+ * Send a single CW element (dit or dah)
+ */
+async function sendElement(duration) {
+  if (isKeying) return; // Prevent overlapping elements
+  
+  isKeying = true;
+  
+  // Key down
+  client.sendCwEvent(true, duration);
+  audioHandler.setKey(callsign, true);
+  await sleep(duration);
+  
+  // Key up (element space)
+  const elementSpace = ditMs;
+  client.sendCwEvent(false, elementSpace);
+  audioHandler.setKey(callsign, false);
+  await sleep(elementSpace);
   
   isKeying = false;
-  
-  // Calculate duration
-  const duration = Date.now() - keyDownTime;
-  
-  // Send event
-  client.sendCwEvent(false, duration);
-  
-  // Local sidetone
-  audioHandler.setKey(callsign, false);
 }
 
 /**

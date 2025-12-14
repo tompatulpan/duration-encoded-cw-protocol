@@ -10,8 +10,8 @@ class CWDecoder {
     // These values are tuned to reliably detect CW spacing with margin for timing variance
     this.TIMING_CONFIG = {
       ditDahThreshold: 1.5,      // Threshold between dit and dah (1.5× dit, matches Python)
-      letterSpaceThreshold: 3.5, // Letter space detection (3.5× dit = 168ms @ 25 WPM) - high tolerance for manual keying
-      wordSpaceThreshold: 8.5,   // Word space detection (8.5× dit = 408ms @ 25 WPM) - allows manual keying pauses
+      letterSpaceThreshold: 2.5, // Letter space detection 
+      wordSpaceThreshold: 8.0,   // Word space detection
       avgDitSmoothFactor: 0.9    // Exponential moving average factor (0.9 = 90% old, 10% new)
     };
     
@@ -140,6 +140,14 @@ class CWDecoder {
       // Spacing detection based on UP duration (matches Python decoder logic)
       const letterSpaceThreshold = user.avgDit * this.TIMING_CONFIG.letterSpaceThreshold;
       const wordSpaceThreshold = user.avgDit * this.TIMING_CONFIG.wordSpaceThreshold;
+
+      // DIAGNOSTIC: Log threshold calculations
+      console.log('[Decoder] DIAGNOSTIC:', callsign, 
+                  'spaceDuration=' + spaceDuration + 'ms',
+                  'avgDit=' + user.avgDit.toFixed(1) + 'ms',
+                  'letterThreshold=' + letterSpaceThreshold.toFixed(1) + 'ms (' + this.TIMING_CONFIG.letterSpaceThreshold + '× dit)',
+                  'wordThreshold=' + wordSpaceThreshold.toFixed(1) + 'ms (' + this.TIMING_CONFIG.wordSpaceThreshold + '× dit)',
+                  'buffer=' + user.buffer.join(''));
 
       if (spaceDuration > wordSpaceThreshold) {
         // Word space

@@ -514,10 +514,20 @@ class USBKeyWebSender:
     
     async def poll_straight_key(self):
         """Poll straight key and send events"""
-        last_key_state = False
+        # Initialize with actual current key state to avoid spurious first event
+        last_key_state = self.ser.cts  # Read actual state
         last_change_time = time.time()
         
+        # Calculate spacing thresholds for adaptive encoding
+        dit_ms = 1200 / self.wpm
+        element_space_ms = dit_ms
+        letter_space_ms = dit_ms * 3  # 144ms @ 25 WPM
+        
+        # Threshold: midpoint between element and letter space (2× dit = 96ms @ 25 WPM)
+        space_threshold_ms = dit_ms * 2
+        
         print("✓ Ready - press key to send CW")
+        print(f"  Spacing detection: <{space_threshold_ms:.0f}ms = element space, >{space_threshold_ms:.0f}ms = letter space")
         print("  (Ctrl+C to quit)")
         
         while self.running and self.connected:
@@ -528,11 +538,25 @@ class USBKeyWebSender:
                 # Detect state change
                 if current_key_state != last_key_state:
                     current_time = time.time()
-                    duration_ms = (current_time - last_change_time) * 1000.0
+                    raw_duration_ms = (current_time - last_change_time) * 1000.0
                     
-                    # Send previous state with its measured duration
+                    # Adaptive spacing encoding:
+                    # - For UP events (spacing): encode short pauses as element_space, 
+                    #   long pauses as letter_space based on threshold detection
+                    # - For DOWN events (elements): use raw duration (dit/dah timing preserved)
+                    
+                    if not last_key_state and raw_duration_ms > space_threshold_ms:
+                        # UP event with long pause → encode as letter space
+                        duration_ms = letter_space_ms
+                        if self.debug:
+                            print(f"\n[SPACE] Detected {raw_duration_ms:.0f}ms pause → encoded as letter_space ({letter_space_ms:.0f}ms)")
+                    else:
+                        # DOWN event or short UP pause → use raw timing
+                        duration_ms = raw_duration_ms
+                    
+                    # Send previous state with encoded duration
                     # When key releases: sends DOWN(element_duration)
-                    # When key presses: sends UP(spacing_duration)
+                    # When key presses: sends UP(spacing_duration - now with adaptive encoding!)
                     self._send_event(last_key_state, duration_ms)
                     
                     last_key_state = current_key_state
