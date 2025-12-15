@@ -408,26 +408,16 @@ async function startIambicKeyer() {
         dahMemory = false;
         keyerState = 'DIT';
         
-        // Send dit
+        // Send dit (memory will be set during element if opposite paddle pressed)
         await sendElement(ditMs);
-        
-        // Check if dah was pressed during dit (Mode B memory)
-        if (dahPressed) {
-          dahMemory = true;
-        }
         
       } else if (dahPressed) {
         ditMemory = false;
         dahMemory = false;
         keyerState = 'DAH';
         
-        // Send dah
+        // Send dah (memory will be set during element if opposite paddle pressed)
         await sendElement(ditMs * 3);
-        
-        // Check if dit was pressed during dah (Mode B memory)
-        if (ditPressed) {
-          ditMemory = true;
-        }
         
       } else {
         // No paddles pressed, exit keyer
@@ -437,7 +427,7 @@ async function startIambicKeyer() {
     
     // DIT state - just sent a dit
     else if (keyerState === 'DIT') {
-      // Sample paddles (memory from element space)
+      // Sample paddles during element space (after element ended)
       if (ditPressed) {
         ditMemory = true;
       }
@@ -450,25 +440,15 @@ async function startIambicKeyer() {
         dahMemory = false;
         keyerState = 'DAH';
         
-        // Send dah
+        // Send dah (memory set during element transmission)
         await sendElement(ditMs * 3);
-        
-        // Mode B: Check for dit during dah
-        if (ditPressed) {
-          ditMemory = true;
-        }
         
       } else if (ditMemory) {
         ditMemory = false;
         keyerState = 'DIT';
         
-        // Send dit
+        // Send dit (memory set during element transmission)
         await sendElement(ditMs);
-        
-        // Mode B: Check for dah during dit
-        if (dahPressed) {
-          dahMemory = true;
-        }
         
       } else {
         // No memory, return to idle
@@ -478,7 +458,7 @@ async function startIambicKeyer() {
     
     // DAH state - just sent a dah
     else if (keyerState === 'DAH') {
-      // Sample paddles (memory from element space)
+      // Sample paddles during element space (after element ended)
       if (ditPressed) {
         ditMemory = true;
       }
@@ -491,25 +471,15 @@ async function startIambicKeyer() {
         ditMemory = false;
         keyerState = 'DIT';
         
-        // Send dit
+        // Send dit (memory set during element transmission)
         await sendElement(ditMs);
-        
-        // Mode B: Check for dah during dit
-        if (dahPressed) {
-          dahMemory = true;
-        }
         
       } else if (dahMemory) {
         dahMemory = false;
         keyerState = 'DAH';
         
-        // Send dah
+        // Send dah (memory set during element transmission)
         await sendElement(ditMs * 3);
-        
-        // Mode B: Check for dit during dah
-        if (ditPressed) {
-          ditMemory = true;
-        }
         
       } else {
         // No memory, return to idle
@@ -540,7 +510,19 @@ async function sendElement(duration) {
   console.log('[Room] Local DOWN event:', downEvent);
   decoder.processEvent(downEvent);
   
-  await sleep(duration);
+  // Sleep during element, sampling paddles for Mode B memory
+  const startTime = Date.now();
+  while (Date.now() - startTime < duration) {
+    await sleep(5); // Check every 5ms during element
+    
+    // Sample paddles during element transmission (Mode B)
+    if (ditPressed && keyerState === 'DAH') {
+      ditMemory = true;
+    }
+    if (dahPressed && keyerState === 'DIT') {
+      dahMemory = true;
+    }
+  }
   
   // Key up (element space)
   const elementSpace = ditMs;
