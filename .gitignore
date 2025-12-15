@@ -162,6 +162,10 @@ CW_PROTOCOL_SPECIFICATION.md
 DOC/
 Doc/
 
+FEC_BUGFIXES.md
+FEC_README.md
+FEC_TESTING.md
+
 .github/
 web_platform/
 web_platform_tcp/
