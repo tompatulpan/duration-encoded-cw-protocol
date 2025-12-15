@@ -323,8 +323,17 @@ function setupUI() {
   // Practice drills
   document.querySelectorAll('.btn-drill').forEach(btn => {
     btn.addEventListener('click', () => {
-      const text = btn.dataset.text;
-      sendText(text);
+      // Check for special random generation buttons
+      if (btn.id === 'randomLetters') {
+        const text = generateRandomLetters(5, 5); // 5 groups of 5 letters
+        sendText(text);
+      } else if (btn.id === 'randomNumbers') {
+        const text = generateRandomMixed(5, 5); // 5 groups of 5 mixed chars
+        sendText(text);
+      } else {
+        const text = btn.dataset.text;
+        sendText(text);
+      }
     });
   });
   
@@ -800,6 +809,42 @@ function updateStats() {
   document.getElementById('statEventsSent').textContent = clientStats.eventsSent;
   document.getElementById('statEventsReceived').textContent = clientStats.eventsReceived;
   document.getElementById('statQueueDepth').textContent = bufferStats.queueDepth;
+}
+
+/**
+ * Generate random letters (5 groups of 5 letters)
+ */
+function generateRandomLetters(groups, lettersPerGroup) {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const result = [];
+  
+  for (let i = 0; i < groups; i++) {
+    let group = '';
+    for (let j = 0; j < lettersPerGroup; j++) {
+      group += letters.charAt(Math.floor(Math.random() * letters.length));
+    }
+    result.push(group);
+  }
+  
+  return result.join(' ');
+}
+
+/**
+ * Generate random mixed alphanumeric (4 groups of 5 chars)
+ */
+function generateRandomMixed(groups, charsPerGroup) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const result = [];
+  
+  for (let i = 0; i < groups; i++) {
+    let group = '';
+    for (let j = 0; j < charsPerGroup; j++) {
+      group += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    result.push(group);
+  }
+  
+  return result.join(' ');
 }
 
 /**
