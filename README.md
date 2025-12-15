@@ -40,9 +40,9 @@ Each packet describes a state transition with the duration of the previous state
 The project includes multiple implementations optimized for different network conditions:
 
 - **UDP** - Low latency, best for LAN
+- **UDP+Timestamps** - Burst-resistant timing
 - **TCP** - Reliable delivery, better for high jitter
-- **TCP+Timestamps** - Burst-resistant timing for WiFi
-- **UDP+FEC** - Forward error correction for lossy networks
+- **TCP+Timestamps** - Burst-resistant timing
 - **WebSocket** - Browser-based implementation
 
 See the detailed README files in [`test_implementation/`](test_implementation/) and [`web_platform_tcp/`](web_platform_tcp/) for specific implementations.
@@ -110,7 +110,7 @@ python3 cw_receiver_tcp_ts.py --jitter-buffer 150
 
 The [`test_implementation/`](test_implementation/) directory contains a complete Python reference implementation with:
 
-- **Multiple protocol variants** (UDP, TCP, TCP+timestamps, FEC)
+- **Multiple protocol variants** (UDP, UDP+timestamps, TCP, TCP+timestamps)
 - **Automated senders** (text-to-CW conversion)
 - **Interactive senders** (line-by-line keying)
 - **Physical key support** (USB serial adapters, iambic keyers)
@@ -161,8 +161,6 @@ python3 cw_gpio_output.py
 # Custom GPIO pin with buffer
 python3 cw_gpio_output.py --pin 23 --buffer 150
 
-# With FEC for packet loss recovery
-python3 cw_gpio_output_fec.py --pin 23 --buffer 200
 ```
 
 **Hardware connection:** GPIO Pin → Relay/Transistor → Transmitter Key Input
@@ -184,7 +182,7 @@ Complete technical documentation is in the implementation directories:
 
 - **[test_implementation/README.md](test_implementation/README.md)** - Python implementation guide
   - Protocol specifications (packet format, timing)
-  - Protocol variants (UDP, TCP, FEC)
+  - Protocol variants (UDP, TCP)
   - Usage examples and command-line options
   - Jitter buffer tuning and configuration
   - Hardware setup (GPIO, USB serial)
@@ -203,7 +201,6 @@ Complete technical documentation is in the implementation directories:
 **Currently implemented:**
 - ✅ 3-byte UDP protocol
 - ✅ TCP variants (duration-based and timestamp-based)
-- ✅ Forward error correction (FEC) for packet loss
 - ✅ Jitter buffer with word space detection
 - ✅ Hardware key support (USB serial)
 - ✅ Iambic keyer (Mode A/B)
