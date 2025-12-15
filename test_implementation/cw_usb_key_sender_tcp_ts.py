@@ -195,13 +195,14 @@ class IambicKeyer:
 class USBKeySender:
     """USB CW Key sender using TCP timestamp protocol"""
     
-    def __init__(self, host, port, mode='straight', wpm=20, serial_port=None, no_audio=False):
+    def __init__(self, host, port, mode='straight', wpm=20, serial_port=None, no_audio=False, debug=False):
         self.host = host
         self.port = port
         self.mode = mode
         self.wpm = wpm
         self.running = False
         self.no_audio = no_audio
+        self.debug = debug
         
         # Protocol (will connect later)
         self.protocol = CWProtocolTCPTimestamp()
@@ -317,6 +318,12 @@ class USBKeySender:
     def send_event(self, key_down, duration_ms):
         """Send CW event with timestamp"""
         try:
+            # Get current timestamp
+            if self.protocol.transmission_start is None:
+                timestamp_ms = 0
+            else:
+                timestamp_ms = int((time.time() - self.protocol.transmission_start) * 1000)
+            
             self.protocol.send_packet(key_down, int(duration_ms))
             
             # Update sidetone
@@ -324,7 +331,10 @@ class USBKeySender:
                 self.sidetone.set_key(key_down)
             
             state_str = "DOWN" if key_down else "UP"
-            print(f"[KEY] {state_str:4s} {duration_ms:5.1f}ms")
+            if self.debug:
+                print(f"[SEND] {state_str} {duration_ms:5.1f}ms (ts={timestamp_ms}ms)")
+            else:
+                print(f"[KEY] {state_str:4s} {duration_ms:5.1f}ms")
             
         except Exception as e:
             print(f"[ERROR] Send failed: {e}")
@@ -500,6 +510,8 @@ Examples:
     parser.add_argument('--serial-port', help='Serial port device (auto-detect if not specified)')
     parser.add_argument('--no-audio', action='store_true',
                        help='Disable audio sidetone')
+    parser.add_argument('--debug', action='store_true',
+                       help='Enable debug output with timestamps')
     
     args = parser.parse_args()
     
@@ -509,7 +521,8 @@ Examples:
         mode=args.mode,
         wpm=args.wpm,
         serial_port=args.serial_port,
-        no_audio=args.no_audio
+        no_audio=args.no_audio,
+        debug=args.debug
     )
     
     return sender.run()

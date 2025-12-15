@@ -244,6 +244,173 @@ Packet 4: UP 48ms, ts=144ms   → schedule at sender_T0 + 144ms + 150ms (T+294ms
 
 **Real-world impact:** Timestamp protocol eliminates "lengthening dah" artifacts caused by packet burst queue buildup over WiFi.
 
+### Why Timestamps AND Duration?
+
+The timestamp protocol includes **both** timestamp and duration fields. Here's why both are needed:
+### Why Timestamps AND Duration?
+
+The timestamp protocol includes **both** timestamp and duration fields. Here's why both are needed:
+
+**Timestamp tells WHEN to start:**
+```python
+playout_time = sender_timeline_offset + (timestamp_ms / 1000.0) + buffer_ms
+```
+
+**Duration tells HOW LONG to play:**
+```python
+event_end_time = playout_time + (duration_ms / 1000.0)
+```
+
+**Why not calculate duration from timestamps?**
+
+Calculating duration from timestamp differences works in theory, but creates practical problems:
+
+```python
+# PROBLEM 1: Packet loss breaks duration calculation
+Sender transmits:
+Packet 1: DOWN, ts=0ms
+Packet 2: UP, ts=48ms      # LOST IN NETWORK
+Packet 3: DOWN, ts=389ms   # Arrives
+
+# Without duration field:
+# Receiver has: DOWN at ts=0ms, then DOWN at ts=389ms
+# Calculate: 389 - 0 = 389ms
+# But is that 389ms DOWN? Or 48ms DOWN + 341ms space (UP)?
+# Can't distinguish DOWN duration from UP duration without state info
+
+# With duration field:
+Packet 1: DOWN, duration=48ms, ts=0ms   ✓ Self-contained event
+Packet 3: DOWN, duration=48ms, ts=389ms ✓ Self-contained event
+# Packet loss creates 293ms gap (48ms missing UP + 245ms extra space)
+# Each packet complete - timing preserved despite loss
+```
+
+```python
+# PROBLEM 2: State validation requires both DOWN and UP durations
+# Without duration, timestamps only tell you WHEN transitions occur
+
+# Receiver sees:
+DOWN at ts=0ms
+DOWN at ts=389ms   # Two DOWN states - invalid!
+
+# Can't validate: Was middle packet UP or DOWN?
+# With duration: Each packet declares its state AND how long
+DOWN 48ms at ts=0ms     ✓ Key held 48ms
+UP 341ms at ts=48ms     ✓ Key released 341ms (LOST)
+DOWN 48ms at ts=389ms   ✓ Key held 48ms
+# State machine can validate even with losses
+```
+
+```python
+# PROBLEM 3: Computational overhead multiplied across receivers
+# Without duration: Every receiver must buffer pairs and calculate
+# With duration: Sender measures once, all receivers just read
+
+# Example with 100 receivers:
+Without duration:
+  - 100 receivers × packet buffering
+  - 100 receivers × timestamp subtraction
+  - 100 × state tracking for calculation
+
+With duration:
+  - 1 sender measurement
+  - 100 receivers just read the value
+  - Simpler receiver implementation
+```
+
+**Duration is essential because:**
+
+1. **Self-contained packets** - Each event complete and independent
+   ```python
+   # With duration: Single packet has all information
+   packet: DOWN, duration=48ms, ts=8604ms
+   # Receiver knows: Play DOWN for 48ms at scheduled time
+   # No dependencies on other packets
+   
+   # Without duration: Need packet pairs
+   packet1: DOWN, ts=8604ms        # Duration unknown
+   packet2: UP, ts=8652ms          # Calculate: 8652-8604=48ms
+   # If packet2 lost: packet1's duration permanently unknown
+   ```
+
+2. **Robust to packet loss** - Missing packets create gaps, not errors
+   ```python
+   # Packet loss scenario with duration field:
+   Packet 1: DOWN 48ms, ts=0ms    → Play 48ms DOWN ✓
+   Packet 2: UP 48ms, ts=48ms     → LOST (creates 48ms silent gap)
+   Packet 3: DOWN 48ms, ts=389ms  → Play 48ms DOWN ✓
+   # Result: Correct timing with gap (natural CW spacing)
+   
+   # Packet loss without duration:
+   Packet 1: DOWN, ts=0ms         → Duration unknown, can't play yet
+   Packet 2: LOST                 → Never arrives
+   Packet 3: DOWN, ts=389ms       → Calculate 389-0=389ms?
+   # Result: State error (DOWN→DOWN) and wrong duration calculation
+   # Can't distinguish event type from timestamp difference alone
+   ```
+
+3. **Simpler receiver implementation** - No packet pairing required
+   ```python
+   # With duration: Immediate scheduling
+   receive_packet(DOWN, 48ms, ts=8604ms)
+   → schedule_audio(48ms, at_time=sender_start+8604ms+buffer)
+   # Done! Single packet processed independently
+   
+   # Without duration: Must buffer and pair packets
+   receive_packet(DOWN, ts=8604ms)
+   → buffer.append(packet)
+   → wait_for_next_packet()
+   → calculate_duration()
+   → schedule_audio()
+   # More complex: requires packet buffering and pairing logic
+   ```
+
+4. **Lower computational overhead** - Sender measures, receivers read
+   ```python
+   # With duration: Measured at source
+   sender_overhead = 1 duration measurement per event
+   receiver_overhead = 0 calculations (just read value)
+   
+   # Without duration: Every receiver calculates
+   sender_overhead = 0
+   receiver_overhead = N receivers × (buffering + calculating)
+   # With 100 receivers: 100x the computation
+   ```
+
+**Why timestamps solve scheduling problems:**
+
+Timestamps DO provide absolute time reference immune to network delays:
+```python
+# Packet sent at sender T=8604ms, arrives at receiver T+8700ms (96ms network delay)
+# Timestamp = 8604ms (sender's measurement, not affected by network)
+
+# Receiver schedules:
+playout_time = sender_timeline_offset + 8604ms + buffer_ms
+# Network delay doesn't affect playout time ✓
+
+# This is why we use buffers in both protocols:
+# - Buffer absorbs network delay/jitter
+# - Timestamp preserves sender's timing intent
+# - Duration provides self-contained event information
+```
+
+**The real value of duration:**
+
+The issue isn't network delay (buffers handle that). The issue is **packet loss and state validation**:
+
+- **Without duration:** Packet loss breaks the calculation chain and state validation
+- **With duration:** Each packet is self-contained and includes state information
+- **Both protocols use buffers** to handle network delays
+- **Duration field solves a different problem** than timestamps
+
+**Packet overhead:** Duration adds only 1-2 bytes per packet - minimal cost for:
+- Self-contained packets (no dependencies on previous/next packets)
+- Robust packet loss handling (gaps instead of errors)
+- Simpler receiver logic (no packet pairing needed)
+- Lower per-receiver CPU usage (calculated once at sender)
+
+**Conclusion:** Timestamp provides absolute scheduling (immune to network delay bursts), while duration provides self-contained event information (robust to packet loss). Buffers handle network delays in both protocols. Together they enable reliable real-time CW transmission.
+
 ## Architecture and Code Dependencies
 
 ### Module Structure

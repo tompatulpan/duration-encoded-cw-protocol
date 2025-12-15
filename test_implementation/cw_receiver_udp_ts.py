@@ -25,6 +25,7 @@ class CWReceiverUDPTimestamp:
         self.events_received = 0
         self.max_delay_ms = 0
         self.sender_timeline_offset = None  # Synchronize to sender timeline
+        self.current_timestamp_ms = None  # Track current packet timestamp for debug display
         
         # Jitter buffer for timestamp protocol
         self.jitter_buffer = None
@@ -49,7 +50,10 @@ class CWReceiverUDPTimestamp:
         
         if self.debug:
             state_str = "DOWN" if key_down else "UP"
-            print(f"[PLAY] {state_str} {duration_ms}ms")
+            if self.current_timestamp_ms is not None:
+                print(f"[PLAY] {state_str} {duration_ms}ms (ts={self.current_timestamp_ms}ms)")
+            else:
+                print(f"[PLAY] {state_str} {duration_ms}ms")
     
     def _immediate_playout(self, key_down, duration_ms):
         """Play immediately without jitter buffer"""
@@ -58,7 +62,10 @@ class CWReceiverUDPTimestamp:
         
         if self.debug:
             state_str = "DOWN" if key_down else "UP"
-            print(f"[PLAY] {state_str} {duration_ms}ms")
+            if self.current_timestamp_ms is not None:
+                print(f"[PLAY] {state_str} {duration_ms}ms (ts={self.current_timestamp_ms}ms)")
+            else:
+                print(f"[PLAY] {state_str} {duration_ms}ms")
     
     def run(self):
         """Main receiver loop"""
@@ -118,6 +125,9 @@ class CWReceiverUDPTimestamp:
                             self.suppress_state_errors = True
                 
                 self.last_key_state = key_down
+                
+                # Store timestamp for debug display
+                self.current_timestamp_ms = timestamp_ms
                 
                 # Synchronize to sender timeline on first packet
                 if self.sender_timeline_offset is None:

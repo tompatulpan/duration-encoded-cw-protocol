@@ -162,15 +162,19 @@ CW_PROTOCOL_SPECIFICATION.md
 DOC/
 Doc/
 
+FEC/
 FEC_BUGFIXES.md
 FEC_README.md
 FEC_TESTING.md
+*fec*
 
+# GitHub workflows
 .github/
+
 web_platform/
 web_platform_tcp/
+
 old/
-FEC/
 testing/
 
 # Web platform - Node.js and development files
@@ -180,7 +184,7 @@ worker/
 package-lock.json
 .dev.vars
 web_platform/dist/
-*fec*
+
 
 # Web platform TCP - Node.js and JavaScript development files
 web_platform_tcp/node_modules/

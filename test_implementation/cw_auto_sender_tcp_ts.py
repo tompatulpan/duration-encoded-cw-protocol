@@ -31,7 +31,7 @@ MORSE_TABLE = {
 }
 
 
-def send_text_tcp_ts(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio=True):
+def send_text_tcp_ts(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio=True, debug=False):
     """Send text as CW over TCP with timestamps"""
     
     protocol = CWProtocolTCPTimestamp()
@@ -83,13 +83,24 @@ def send_text_tcp_ts(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio
             for i, symbol in enumerate(morse):
                 # Key down
                 duration = dah_ms if symbol == '-' else dit_ms
+                
+                # Get current timestamp
+                if protocol.transmission_start is None:
+                    timestamp_ms = 0
+                else:
+                    timestamp_ms = int((time.time() - protocol.transmission_start) * 1000)
+                
                 if not protocol.send_packet(True, duration):
                     print("\n[TCP-TS] Send failed - connection lost")
                     if sidetone:
                         sidetone.set_key(False)
                     return False
                 packet_count += 1
-                print(f"[TX {packet_count}]", end='', flush=True)
+                
+                if debug:
+                    print(f"[SEND] DOWN {duration}ms (ts={timestamp_ms}ms)")
+                else:
+                    print(f"[TX {packet_count}]", end='', flush=True)
                 
                 # Turn on sidetone
                 if sidetone:
@@ -104,12 +115,19 @@ def send_text_tcp_ts(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio
                 if i < len(morse) - 1:
                     # Inter-element space (1 dit unit)
                     space_duration = element_space_ms
+                    
+                    # Get timestamp for UP event
+                    timestamp_ms = int((time.time() - protocol.transmission_start) * 1000)
+                    
                     if not protocol.send_packet(False, space_duration):
                         print("\n[TCP-TS] Send failed - connection lost")
                         if sidetone:
                             sidetone.set_key(False)
                         return False
                     packet_count += 1
+                    
+                    if debug:
+                        print(f"[SEND] UP {space_duration}ms (ts={timestamp_ms}ms)")
                     
                     # Turn off sidetone
                     if sidetone:
@@ -120,12 +138,19 @@ def send_text_tcp_ts(text, host='127.0.0.1', port=TCP_PORT, wpm=25, enable_audio
                 else:
                     # Letter space (3 dit units)
                     space_duration = char_space_ms
+                    
+                    # Get timestamp for UP event
+                    timestamp_ms = int((time.time() - protocol.transmission_start) * 1000)
+                    
                     if not protocol.send_packet(False, space_duration):
                         print("\n[TCP-TS] Send failed - connection lost")
                         if sidetone:
                             sidetone.set_key(False)
                         return False
                     packet_count += 1
+                    
+                    if debug:
+                        print(f"[SEND] UP {space_duration}ms (ts={timestamp_ms}ms)")
                     
                     # Turn off sidetone
                     if sidetone:
@@ -157,6 +182,7 @@ def main():
     parser.add_argument('wpm', type=int, default=25, nargs='?', help='Words per minute (12-35)')
     parser.add_argument('text', nargs='?', default='5 CQ CQ CQ', help='Text to send')
     parser.add_argument('--no-audio', action='store_true', help='Disable audio sidetone')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output with timestamps')
     
     args = parser.parse_args()
     
@@ -170,7 +196,8 @@ def main():
         args.text,
         host=args.host,
         wpm=args.wpm,
-        enable_audio=not args.no_audio
+        enable_audio=not args.no_audio,
+        debug=args.debug
     )
     
     return 0 if success else 1

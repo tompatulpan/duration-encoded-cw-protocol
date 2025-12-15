@@ -53,13 +53,14 @@ def main():
     last_state = None
     state_errors = 0
     suppress_state_errors = False
+    current_timestamp_ms = None  # Track current packet timestamp for debug display
     
     # Timestamp synchronization
     sender_timeline_offset = None  # sender_start_time in receiver's clock
     
     def playout_callback(key_down, duration_ms):
         """Callback for jitter buffer playout"""
-        nonlocal last_state, state_errors, suppress_state_errors, packet_count
+        nonlocal last_state, state_errors, suppress_state_errors, packet_count, current_timestamp_ms
         
         # State validation
         if last_state is not None and last_state == key_down:
@@ -77,6 +78,14 @@ def main():
         # Audio feedback
         if sidetone:
             sidetone.set_key(key_down)
+        
+        # Debug output with timestamp
+        if args.debug:
+            state_str = "DOWN" if key_down else "UP"
+            if current_timestamp_ms is not None:
+                print(f"[PLAY] {state_str} {duration_ms}ms (ts={current_timestamp_ms}ms)")
+            else:
+                print(f"[PLAY] {state_str} {duration_ms}ms")
         
         # Statistics
         stats.add_event(key_down, duration_ms)
@@ -138,6 +147,9 @@ def main():
                     break
                 
                 key_down, duration_ms, timestamp_ms = result
+                
+                # Store timestamp for debug display
+                current_timestamp_ms = timestamp_ms
                 
                 if args.debug:
                     print(f"\n[DEBUG] Received timestamped packet: ts={timestamp_ms}ms")

@@ -57,6 +57,12 @@ class CWAutoSenderUDPTimestamp:
     
     def send_event(self, key_down, duration_ms):
         """Send CW event with real-time timing"""
+        # Get current timestamp before sending
+        if self.protocol.transmission_start is None:
+            timestamp_ms = 0
+        else:
+            timestamp_ms = int((time.time() - self.protocol.transmission_start) * 1000)
+        
         # Send packet
         self.protocol.send_packet(key_down, duration_ms, self.dest_addr)
         
@@ -69,7 +75,7 @@ class CWAutoSenderUDPTimestamp:
         
         if self.debug:
             state_str = "DOWN" if key_down else "UP"
-            print(f"[SEND] {state_str} {duration_ms}ms")
+            print(f"[SEND] {state_str} {duration_ms}ms (ts={timestamp_ms}ms)")
     
     def send_dit(self):
         """Send dit"""

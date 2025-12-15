@@ -4,7 +4,7 @@
 
 ## What is DECW?
 
-Duration-Encoded CW (DECW) is a protocol for transmitting Morse code timing information over IP networks (UDP/TCP). Unlike text-based approaches, DECW transmits **raw key events with precise timing**, preserving the operator's natural keying rhythm and "fist".
+Duration-Encoded CW (DECW) is a protocol for transmitting Morse code timing information over IP networks (UDP/TCP) intended prio for **remote control**. Unlike text-based approaches, DECW transmits **raw key events with precise timing**, preserving the operator's natural keying rhythm and "fist".
 
 Each packet contains the **duration** of the event, not just **state changes**. This makes DECW robust against network jitter, as each event is self-contained and can be scheduled independently.
 
