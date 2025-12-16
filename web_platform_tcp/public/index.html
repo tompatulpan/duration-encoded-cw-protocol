@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CW Studio - TCP Timestamp Protocol</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>📻 CW Studio</h1>
+            <p class="tagline">Real-time Morse code practice with TCP-TS protocol</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Quick Join Section -->
+        <section class="quick-join">
+            <h2>Join a Practice Room</h2>
+            <div class="test-notice">⚠️ This is a test site - Expect changes and occasional downtime</div>
+            <div class="room-form">
+                <input type="text" id="callsign" placeholder="Your Callsign (e.g., SM5ABC)" maxlength="10" required>
+                <input type="text" id="roomName" placeholder="Room name (optional, default: main)" value="main">
+                <button id="joinButton" class="btn-primary">Join Room</button>
+            </div>
+            <p class="hint">💡 First time? Try the "main" room to meet other operators</p>
+        </section>
+
+        <!-- Features -->
+        <!-- <section class="features">
+            <h2>✨ Features</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <div class="icon">⚡</div>
+                    <h3>TCP Timestamp Protocol</h3>
+                    <p>Burst-resistant timing - perfect for WiFi and Internet connections</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🎯</div>
+                    <h3>Precise Timing</h3>
+                    <p>±1ms accuracy with timestamp-based scheduling vs ±50ms for audio streaming</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🌐</div>
+                    <h3>Multi-user Rooms</h3>
+                    <p>Practice with multiple operators worldwide in named rooms</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">📝</div>
+                    <h3>Real-time Decoder</h3>
+                    <p>Automatic Morse code to text conversion with adaptive timing</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">⚙️</div>
+                    <h3>Low Bandwidth</h3>
+                    <p>~2 KB/s vs 40 KB/s for audio - 20x more efficient</p>
+                </div>
+                <div class="feature">
+                    <div class="icon">🔊</div>
+                    <h3>Sidetone per User</h3>
+                    <p>Different frequencies for each operator - easy identification</p>
+                </div>
+            </div>
+        </section> -->
+
+        <!-- How It Works -->
+        <!-- <section class="how-it-works">
+            <h2>🔧 How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Join Room</h3>
+                    <p>Enter callsign and room name - connect via WebSocket relay</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>Key CW</h3>
+                    <p>Use keyboard (Z=dit, X=dah) or send automated text</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Events Relayed</h3>
+                    <p>Worker broadcasts events with timestamps to all room members</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">4</div>
+                    <h3>Precise Playback</h3>
+                    <p>Jitter buffer schedules audio + decoder shows text</p>
+                </div>
+            </div>
+        </section> -->
+
+        <!-- Technical Details -->
+        <!-- <section class="technical">
+            <h2>🔬 Technical Details</h2>
+            <div class="tech-grid">
+                <div class="tech-item">
+                    <h3>Protocol</h3>
+                    <p>WebSocket JSON with TCP-TS timing principles</p>
+                </div>
+                <div class="tech-item">
+                    <h3>Latency</h3>
+                    <p>120-200ms total (consistent and predictable)</p>
+                </div>
+                <div class="tech-item">
+                    <h3>Bandwidth</h3>
+                    <p>~2 KB/s per user (vs 40 KB/s for audio)</p>
+                </div>
+                <div class="tech-item">
+                    <h3>Timing</h3>
+                    <p>±1ms precision with timestamp-based scheduling</p>
+                </div>
+                <div class="tech-item">
+                    <h3>Architecture</h3>
+                    <p>Cloudflare Workers (serverless, scalable)</p>
+                </div>
+                <div class="tech-item">
+                    <h3>Free Tier</h3>
+                    <p>Supports 100+ concurrent users</p>
+                </div>
+            </div>
+        </section> -->
+
+        <!-- Active Rooms -->
+        <!-- <section class="active-rooms">
+            <h2>🏠 Active Rooms</h2>
+            <div id="roomsList" class="rooms-list">
+                <p>Loading...</p>
+            </div>
+        </section> -->
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>CW Studio - DECW Protocol - https://github.com/tompatulpan/duration-encoded-cw-protocol</p>
+            <p>Built with Cloudflare Workers • Open Source • MIT License</p>
+            <p>73 de SM0ONR 📻</p>
+        </div>
+    </footer>
+
+    <script src="js/landing.js"></script>
+</body>
+</html>

@@ -161,6 +161,8 @@ CW_PROTOCOL_SPECIFICATION.md
 # Documentation folder (work in progress)
 DOC/
 Doc/
+*.md
+*.sh
 
 FEC/
 FEC_BUGFIXES.md
@@ -172,7 +174,7 @@ FEC_TESTING.md
 .github/
 
 web_platform/
-web_platform_tcp/
+# web_platform_tcp/
 
 old/
 testing/
