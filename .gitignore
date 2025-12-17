@@ -163,6 +163,7 @@ DOC/
 Doc/
 *.md
 *.sh
+log.txt
 
 FEC/
 FEC_BUGFIXES.md
