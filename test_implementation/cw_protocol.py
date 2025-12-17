@@ -235,7 +235,8 @@ class CWTimingStats:
         if dahs:
             stats['avg_dah_ms'] = sum(dahs) / len(dahs)
             stats['dah_count'] = len(dahs)
-            if dits:
+            # Only calculate ratio if we have valid dit measurements
+            if 'avg_dit_ms' in stats and stats['avg_dit_ms'] > 0:
                 stats['dah_dit_ratio'] = stats['avg_dah_ms'] / stats['avg_dit_ms']
         
         if spaces:
