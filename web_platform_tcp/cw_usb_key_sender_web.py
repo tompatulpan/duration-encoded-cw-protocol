@@ -31,6 +31,7 @@ import serial
 import serial.tools.list_ports
 import argparse
 import threading
+import configparser
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'test_implementation'))
@@ -707,44 +708,130 @@ class USBKeyWebSender:
                 print(f"Warning: Serial port close error: {e}")
 
 
+def load_config():
+    """Load configuration from file with precedence: user home > script dir"""
+    config = configparser.ConfigParser()
+    
+    # Try config file locations (in order of precedence)
+    config_paths = [
+        os.path.expanduser('~/.cw_sender.ini'),  # User home (highest priority)
+        os.path.join(os.path.dirname(__file__), 'cw_sender.ini'),  # Script directory
+    ]
+    
+    config_loaded = None
+    for path in config_paths:
+        if os.path.exists(path):
+            config.read(path)
+            config_loaded = path
+            break
+    
+    return config, config_loaded
+
+
 def main():
+    # Load config file first
+    config, config_path = load_config()
+    
+    # Extract defaults from config (if available)
+    defaults = {}
+    if config.has_section('web_platform'):
+        defaults['server'] = config.get('web_platform', 'server', fallback=None)
+        defaults['room'] = config.get('web_platform', 'room', fallback='main')
+        defaults['echo'] = config.getboolean('web_platform', 'echo', fallback=False)
+    else:
+        defaults['server'] = None
+        defaults['room'] = 'main'
+        defaults['echo'] = False
+    
+    if config.has_section('operator'):
+        defaults['callsign'] = config.get('operator', 'callsign', fallback=None)
+    else:
+        defaults['callsign'] = None
+    
+    if config.has_section('keyer'):
+        defaults['mode'] = config.get('keyer', 'mode', fallback='iambic-b')
+        defaults['wpm'] = config.getint('keyer', 'wpm', fallback=20)
+    else:
+        defaults['mode'] = 'iambic-b'
+        defaults['wpm'] = 20
+    
+    if config.has_section('serial'):
+        defaults['port'] = config.get('serial', 'port', fallback=None)
+        if not defaults['port']:  # Empty string in config
+            defaults['port'] = None
+    else:
+        defaults['port'] = None
+    
+    if config.has_section('audio'):
+        defaults['no_sidetone'] = not config.getboolean('audio', 'enabled', fallback=True)
+    else:
+        defaults['no_sidetone'] = False
+    
+    if config.has_section('debug'):
+        defaults['debug'] = config.getboolean('debug', 'verbose', fallback=False)
+    else:
+        defaults['debug'] = False
+    
+    # Create argument parser
     parser = argparse.ArgumentParser(
         description='USB Key Sender for Web Platform (TCP-TS over WebSocket)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Straight key
+  # Straight key (using config file)
+  python3 cw_usb_key_sender_web.py
+  
+  # Override server and callsign
   python3 cw_usb_key_sender_web.py --server wss://cw-relay.workers.dev --callsign SM5ABC
   
-  # Iambic Mode B
-  python3 cw_usb_key_sender_web.py --server wss://cw-relay.workers.dev --callsign SM5ABC --mode iambic-b --wpm 25
+  # Iambic Mode B with specific settings
+  python3 cw_usb_key_sender_web.py --mode iambic-b --wpm 25
   
   # Echo mode testing
-  python3 cw_usb_key_sender_web.py --server wss://cw-relay.workers.dev --callsign TEST --echo --debug
+  python3 cw_usb_key_sender_web.py --echo --debug
+
+Config file locations (in order of precedence):
+  1. ~/.cw_sender.ini (user home)
+  2. ./cw_sender.ini (script directory)
         """
     )
     
-    parser.add_argument('--server', required=True,
+    # Make server and callsign optional if they're in config
+    parser.add_argument('--server', 
+                        required=(defaults['server'] is None),
+                        default=defaults['server'],
                         help='WebSocket server URL (e.g., wss://cw-relay.workers.dev)')
-    parser.add_argument('--callsign', required=True,
+    parser.add_argument('--callsign',
+                        required=(defaults['callsign'] is None),
+                        default=defaults['callsign'],
                         help='Your callsign')
-    parser.add_argument('--room', default='main',
-                        help='Room ID (default: main)')
-    parser.add_argument('--port', default=None,
+    parser.add_argument('--room', default=defaults['room'],
+                        help=f"Room ID (default: {defaults['room']})")
+    parser.add_argument('--port', default=defaults['port'],
                         help='Serial port (auto-detected if not specified)')
-    parser.add_argument('--mode', default='iambic-b',
+    parser.add_argument('--mode', default=defaults['mode'],
                         choices=['straight', 'iambic-a', 'iambic-b'],
-                        help='Keyer mode (default: iambic-b)')
-    parser.add_argument('--wpm', type=int, default=20,
-                        help='Keyer speed in WPM (default: 20)')
-    parser.add_argument('--no-sidetone', action='store_true',
+                        help=f"Keyer mode (default: {defaults['mode']})")
+    parser.add_argument('--wpm', type=int, default=defaults['wpm'],
+                        help=f"Keyer speed in WPM (default: {defaults['wpm']})")
+    parser.add_argument('--no-sidetone', action='store_true', default=defaults['no_sidetone'],
                         help='Disable sidetone audio')
-    parser.add_argument('--echo', action='store_true',
+    parser.add_argument('--echo', action='store_true', default=defaults['echo'],
                         help='Enable echo mode (receive back your events for testing)')
-    parser.add_argument('--debug', action='store_true',
+    parser.add_argument('--debug', action='store_true', default=defaults['debug'],
                         help='Enable debug output')
     
     args = parser.parse_args()
+    
+    # Show config info if loaded
+    if config_path:
+        print(f"✓ Loaded config from: {config_path}")
+        if args.debug:
+            print(f"  Server: {args.server}")
+            print(f"  Callsign: {args.callsign}")
+            print(f"  Room: {args.room}")
+            print(f"  Mode: {args.mode}, WPM: {args.wpm}")
+        print()
     
     # Check audio availability
     if not args.no_sidetone and not AUDIO_AVAILABLE:

@@ -1,0 +1,21 @@
+# CW Protocol Sender - Python Dependencies
+# Compatible with Python 3.6+
+
+# Core dependency - USB serial port access (required for USB key senders)
+pyserial>=3.5
+
+# Optional: Audio sidetone support
+# Note: PyAudio requires platform-specific audio libraries:
+#   - Linux: sudo dnf install python3-pyaudio portaudio (Fedora)
+#            sudo apt install python3-pyaudio portaudio19-dev (Ubuntu/Debian)
+#   - Windows: Requires Visual C++ Redistributable
+#   - Mac: pip install pyaudio works out of the box
+pyaudio>=0.2.11
+numpy>=1.19.0
+
+# Optional: WebSocket support (for web platform sender only)
+# Required for: cw_usb_key_sender_web.py
+websockets>=10.0
+
+# Note: All protocol modules (cw_protocol*.py) use only Python standard library
+# Note: Audio and WebSocket dependencies are optional - senders work without them

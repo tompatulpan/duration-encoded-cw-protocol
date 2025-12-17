@@ -1,0 +1,99 @@
+# CW Sender Configuration File
+# Copy this file to one of these locations:
+#   Linux:   ~/.cw_sender.ini
+#   Windows: %USERPROFILE%\.cw_sender.ini
+#   Portable: Same directory as sender script (cw_sender.ini)
+#
+# Command-line arguments override these settings
+# Example: cw_usb_key_sender_tcp_ts.py 192.168.1.50 --wpm 30
+#          (overrides host and wpm from config)
+
+[network]
+# Target receiver hostname or IP address
+host = 192.168.1.100
+
+# Port number (protocol-specific defaults):
+#   7356 - TCP with timestamps (recommended for WiFi/Internet)
+#   7355 - TCP duration-based or UDP
+#   7357 - UDP with timestamps
+port = 7356
+
+# Protocol type (for future multi-protocol support)
+# Options: tcp-ts, tcp, udp, udp-ts, websocket
+protocol = tcp-ts
+
+[operator]
+# Your amateur radio callsign (optional for TCP/UDP, required for web platform)
+# Used for identification in multi-user web platform sessions
+callsign = SM5ABC
+
+[keyer]
+# Keyer mode for USB key senders
+# Options: straight, iambic-a, iambic-b, bug
+mode = iambic-b
+
+# Words per minute (typical range: 15-30, max: 35)
+# Standard speeds: 15 (beginner), 20 (intermediate), 25 (advanced), 30+ (contest)
+wpm = 25
+
+[serial]
+# USB serial port (leave empty for auto-detection)
+# Windows examples: COM3, COM4, COM5
+# Linux examples: /dev/ttyUSB0, /dev/ttyACM0
+# Leave blank to scan all available ports automatically
+port = 
+
+# Enable auto-detection if port is empty (yes/no)
+auto_detect = yes
+
+[audio]
+# Enable sidetone (yes/no)
+# Provides audible feedback when keying
+# TX frequency: 600 Hz, RX frequency: 700 Hz
+enabled = yes
+
+# Sidetone frequency for transmit (Hz)
+# Standard: 600 Hz (lower tone = TX)
+tx_frequency = 600
+
+# Sidetone frequency for receive (Hz)
+# Standard: 700 Hz (higher tone = RX, to distinguish from TX)
+rx_frequency = 700
+
+# Volume level (0.0 to 1.0)
+# 0.3 = 30% = comfortable listening level
+volume = 0.3
+
+[web_platform]
+# WebSocket server URL (for cw_usb_key_sender_web.py only)
+# Your deployed Cloudflare Worker or other WebSocket relay
+server = wss://cw-studio-relay.data4-9de.workers.dev
+
+# Room ID for multi-user sessions
+# Use same room ID to share CW with others
+# Default: "main" (public room)
+room = main
+
+# Echo mode for local testing (yes/no)
+# When enabled, receives own transmitted CW events
+# Useful for testing decoder without second device
+echo = no
+
+[jitter_buffer]
+# Jitter buffer size in milliseconds (receiver-side setting)
+# Compensates for network timing variations
+# LAN: 0-50 ms, Good Internet: 50-100 ms, Poor/WiFi: 100-200 ms
+buffer_ms = 150
+
+[debug]
+# Enable verbose timing output (yes/no)
+# Shows arrival gaps, durations, state transitions
+verbose = no
+
+# Show individual packet debug info (yes/no)
+# Displays every packet's sequence number, state, duration
+packets = no
+
+# Suppress state error warnings (yes/no)
+# Set to yes if you see spurious state errors during normal operation
+suppress_state_errors = no

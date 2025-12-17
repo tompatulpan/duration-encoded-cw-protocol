@@ -25,6 +25,8 @@ import threading
 import serial
 import serial.tools.list_ports
 import argparse
+import configparser
+import os
 from cw_protocol_tcp_ts import CWProtocolTCPTimestamp
 
 try:
@@ -482,38 +484,118 @@ class USBKeySender:
         print("[INFO] Goodbye!")
 
 
+def load_config():
+    """Load configuration from file with precedence: user home > script dir"""
+    config = configparser.ConfigParser()
+    
+    # Try config file locations (in order of precedence)
+    config_paths = [
+        os.path.expanduser('~/.cw_sender.ini'),  # User home (highest priority)
+        os.path.join(os.path.dirname(__file__), 'cw_sender.ini'),  # Script directory
+    ]
+    
+    config_loaded = None
+    for path in config_paths:
+        if os.path.exists(path):
+            config.read(path)
+            config_loaded = path
+            break
+    
+    return config, config_loaded
+
+
 def main():
+    # Load config file first
+    config, config_path = load_config()
+    
+    # Extract defaults from config (if available)
+    defaults = {}
+    if config.has_section('network'):
+        defaults['host'] = config.get('network', 'host', fallback=None)
+        defaults['port'] = config.getint('network', 'port', fallback=7356)
+    else:
+        defaults['host'] = None
+        defaults['port'] = 7356
+    
+    if config.has_section('keyer'):
+        defaults['mode'] = config.get('keyer', 'mode', fallback='iambic-b')
+        defaults['wpm'] = config.getint('keyer', 'wpm', fallback=20)
+    else:
+        defaults['mode'] = 'iambic-b'
+        defaults['wpm'] = 20
+    
+    if config.has_section('serial'):
+        defaults['serial_port'] = config.get('serial', 'port', fallback=None)
+        if not defaults['serial_port']:  # Empty string in config
+            defaults['serial_port'] = None
+    else:
+        defaults['serial_port'] = None
+    
+    if config.has_section('audio'):
+        defaults['no_audio'] = not config.getboolean('audio', 'enabled', fallback=True)
+    else:
+        defaults['no_audio'] = False
+    
+    if config.has_section('debug'):
+        defaults['debug'] = config.getboolean('debug', 'verbose', fallback=False)
+    else:
+        defaults['debug'] = False
+    
+    # Create argument parser
     parser = argparse.ArgumentParser(
         description='USB CW Key Sender - TCP Timestamp Protocol',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  Straight key:
-    python3 cw_usb_key_sender_tcp_ts.py 192.168.1.100 --mode straight
-    
-  Iambic paddles (Mode B):
-    python3 cw_usb_key_sender_tcp_ts.py 192.168.1.100 --mode iambic-b --wpm 25
-    
-  Bug (mechanical keyer):
-    python3 cw_usb_key_sender_tcp_ts.py 192.168.1.100 --mode bug --wpm 20
+  # Using config file (no arguments needed if configured)
+  python3 cw_usb_key_sender_tcp_ts.py
+  
+  # Straight key
+  python3 cw_usb_key_sender_tcp_ts.py 192.168.1.100 --mode straight
+  
+  # Iambic paddles (Mode B)
+  python3 cw_usb_key_sender_tcp_ts.py 192.168.1.100 --mode iambic-b --wpm 25
+  
+  # Bug (mechanical keyer)
+  python3 cw_usb_key_sender_tcp_ts.py 192.168.1.100 --mode bug --wpm 20
+
+Config file locations (in order of precedence):
+  1. ~/.cw_sender.ini (user home)
+  2. ./cw_sender.ini (script directory)
         """
     )
     
-    parser.add_argument('host', help='Receiver IP address or hostname')
-    parser.add_argument('--port', type=int, default=7356,
-                       help='TCP port (default: 7356 for timestamp protocol)')
+    # Make host optional if it's in config
+    if defaults['host']:
+        parser.add_argument('host', nargs='?', default=defaults['host'],
+                          help=f"Receiver IP address or hostname (default from config: {defaults['host']})")
+    else:
+        parser.add_argument('host', help='Receiver IP address or hostname')
+    
+    parser.add_argument('--port', type=int, default=defaults['port'],
+                       help=f"TCP port (default: {defaults['port']} for timestamp protocol)")
     parser.add_argument('--mode', choices=['straight', 'iambic-a', 'iambic-b', 'bug'],
-                       default='iambic-b',
-                       help='Keyer mode (default: iambic-b)')
-    parser.add_argument('--wpm', type=int, default=20,
-                       help='Speed in WPM for iambic/bug modes (default: 20)')
-    parser.add_argument('--serial-port', help='Serial port device (auto-detect if not specified)')
-    parser.add_argument('--no-audio', action='store_true',
+                       default=defaults['mode'],
+                       help=f"Keyer mode (default: {defaults['mode']})")
+    parser.add_argument('--wpm', type=int, default=defaults['wpm'],
+                       help=f"Speed in WPM for iambic/bug modes (default: {defaults['wpm']})")
+    parser.add_argument('--serial-port', default=defaults['serial_port'],
+                       help='Serial port device (auto-detect if not specified)')
+    parser.add_argument('--no-audio', action='store_true', default=defaults['no_audio'],
                        help='Disable audio sidetone')
-    parser.add_argument('--debug', action='store_true',
+    parser.add_argument('--debug', action='store_true', default=defaults['debug'],
                        help='Enable debug output with timestamps')
     
     args = parser.parse_args()
+    
+    # Show config info if loaded
+    if config_path:
+        print(f"✓ Loaded config from: {config_path}")
+        if args.debug:
+            print(f"  Host: {args.host}")
+            print(f"  Port: {args.port}")
+            print(f"  Mode: {args.mode}, WPM: {args.wpm}")
+        print()
     
     sender = USBKeySender(
         host=args.host,
