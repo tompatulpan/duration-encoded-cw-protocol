@@ -15,6 +15,7 @@ class TCPTSClient {
     this.peerId = null;
     this.sequence = 0;
     this.transmissionStart = null;
+    this.keepaliveInterval = null;
     
     // Statistics
     this.stats = {
@@ -46,6 +47,17 @@ class TCPTSClient {
         
         this.ws.onopen = () => {
           console.log('[TCP-TS] WebSocket connected');
+          
+          // Start keepalive (every 30 seconds, well below Cloudflare's 100s timeout)
+          this.keepaliveInterval = setInterval(() => {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              this.send({
+                type: 'keepalive',
+                timestamp: Date.now()
+              });
+              console.log('[TCP-TS] Keepalive sent');
+            }
+          }, 30000); // 30 seconds
           
           // Join room
           this.send({
@@ -126,6 +138,11 @@ class TCPTSClient {
         }
         break;
         
+      case 'keepalive_ack':
+        // Keepalive acknowledged by server (two-way communication maintained)
+        console.log('[TCP-TS] Keepalive acknowledged');
+        break;
+        
       case 'error':
         console.error('[TCP-TS] Server error:', data.message);
         if (this.onError) {
@@ -181,6 +198,12 @@ class TCPTSClient {
    * Disconnect
    */
   disconnect() {
+    // Clear keepalive interval
+    if (this.keepaliveInterval) {
+      clearInterval(this.keepaliveInterval);
+      this.keepaliveInterval = null;
+    }
+    
     if (this.ws) {
       this.send({ type: 'leave' });
       this.ws.close();

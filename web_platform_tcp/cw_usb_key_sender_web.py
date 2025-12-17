@@ -428,18 +428,23 @@ class USBKeyWebSender:
                 break
     
     async def receive_loop(self):
-        """Receive events from server (for echo mode testing)"""
-        if not self.echo_mode:
-            return  # Only run in echo mode
-        
-        print("✓ Echo mode: will receive back your own events")
+        """Receive events from server (for echo mode and keepalive acks)"""
+        if self.echo_mode:
+            print("✓ Echo mode: will receive back your own events")
         
         while self.connected and self.ws:
             try:
                 message = await self.ws.recv()
-                data = json.dumps(message)
+                data = json.loads(message)
                 
-                if data.get('type') == 'cw_event':
+                msg_type = data.get('type')
+                
+                if msg_type == 'keepalive_ack':
+                    # Keepalive acknowledged (two-way communication)
+                    if self.debug:
+                        print("[DEBUG] Keepalive acknowledged")
+                
+                elif msg_type == 'cw_event' and self.echo_mode:
                     self.events_received += 1
                     
                     # Calculate round-trip latency
@@ -450,6 +455,11 @@ class USBKeyWebSender:
                         
                         if self.debug:
                             print(f"\n[ECHO] Received: {data['key_down']} duration={data['duration_ms']}ms latency={latency}ms")
+                
+                elif msg_type in ['peer_joined', 'peer_left']:
+                    # Room events (informational)
+                    if self.debug:
+                        print(f"[DEBUG] {msg_type}: {data}")
                     
             except websockets.exceptions.ConnectionClosed:
                 print("\n✗ Connection closed")
@@ -649,9 +659,8 @@ class USBKeyWebSender:
             # Keepalive task
             tasks.append(asyncio.create_task(self.keepalive_loop()))
             
-            # Echo receive task (if enabled)
-            if self.echo_mode:
-                tasks.append(asyncio.create_task(self.receive_loop()))
+            # Receive task (always run to handle keepalive_ack and room events)
+            tasks.append(asyncio.create_task(self.receive_loop()))
             
             # Key polling task
             if self.mode in ['iambic-a', 'iambic-b']:

@@ -41,6 +41,16 @@ class CWProtocolTCP(CWProtocol):
                 self.close()
             
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # Enable TCP keepalive to prevent idle connection drops
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            
+            # Platform-specific keepalive tuning (Linux/Unix)
+            if hasattr(socket, 'TCP_KEEPIDLE'):
+                self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)    # Start after 60s idle
+                self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)   # Probe every 10s
+                self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)      # Drop after 3 failed probes
+            
             self.sock.settimeout(timeout)
             self.sock.connect((host, port))
             self.sock.settimeout(None)  # Blocking mode after connection
