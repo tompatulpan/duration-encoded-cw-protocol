@@ -263,7 +263,12 @@ Examples:
     # Connect to WebSocket server
     try:
         print(f"Connecting to {ws_url}...")
-        ws = await websockets.connect(ws_url, ping_interval=None, ping_timeout=None)
+        # Connect with manual keepalive (Cloudflare Workers requirement)
+        ws = await websockets.connect(
+            ws_url,
+            ping_interval=None,  # Disable automatic pings
+            ping_timeout=None    # Use application-level keepalive instead
+        )
         
         # Send join message (register with room)
         join_msg = {
@@ -312,10 +317,62 @@ Examples:
     sequence = 0
     loop_count = 0
     
+    # Keepalive tracking
+    keepalive_task = None
+    receive_task = None
+    connected = True
+    
+    # Keepalive loop (prevent idle disconnection)
+    async def keepalive_loop():
+        """Send keepalive messages every 15 seconds (Cloudflare Workers requirement)"""
+        nonlocal connected, ws
+        
+        while connected and ws:
+            try:
+                await asyncio.sleep(15)
+                if connected and ws:
+                    keepalive_msg = {'type': 'keepalive'}
+                    await ws.send(json.dumps(keepalive_msg))
+                    if args.debug:
+                        print("[DEBUG] Keepalive sent")
+            except Exception as e:
+                if args.debug:
+                    print(f"[DEBUG] Keepalive failed: {e}")
+                break
+    
+    # Receive loop (handle keepalive_ack and maintain connection)
+    async def receive_loop():
+        """Receive events from server (keepalive acks and room events)"""
+        nonlocal connected, ws
+        
+        while connected and ws:
+            try:
+                message = await ws.recv()
+                data = json.loads(message)
+                
+                msg_type = data.get('type')
+                
+                if msg_type == 'keepalive_ack':
+                    if args.debug:
+                        print("[DEBUG] Keepalive acknowledged")
+                
+                elif msg_type in ['peer_joined', 'peer_left']:
+                    if args.debug:
+                        print(f"[DEBUG] Room event: {msg_type}")
+                
+            except websockets.exceptions.ConnectionClosed:
+                print("\n✗ Connection closed by server")
+                connected = False
+                break
+            except Exception as e:
+                if args.debug:
+                    print(f"[DEBUG] Receive error: {e}")
+                break
+    
     # WebSocket reconnection helper
     async def ws_send_with_reconnect(ws_ref, message_dict):
         """Send WebSocket message with automatic reconnection on failure"""
-        nonlocal ws
+        nonlocal ws, connected, keepalive_task, receive_task
         
         max_reconnect_attempts = 5
         reconnect_delay = 2.0
@@ -353,6 +410,11 @@ Examples:
                     
                     if data.get('type') in ['joined', 'echo']:
                         print(f"[WebSocket] ✓ Reconnected to {ws_url}")
+                        
+                        # Restart keepalive and receive tasks
+                        connected = True
+                        keepalive_task = asyncio.create_task(keepalive_loop())
+                        receive_task = asyncio.create_task(receive_loop())
                         
                         # Try to send the original message
                         try:
@@ -428,6 +490,10 @@ Examples:
         
         last_event_time = now
     
+    # Start background tasks
+    keepalive_task = asyncio.create_task(keepalive_loop())
+    receive_task = asyncio.create_task(receive_loop())
+    
     try:
         while True:
             loop_count += 1
@@ -501,6 +567,19 @@ Examples:
         print("\n\nShutting down...")
     
     finally:
+        # Stop background tasks
+        connected = False
+        if keepalive_task:
+            keepalive_task.cancel()
+        if receive_task:
+            receive_task.cancel()
+        
+        # Wait briefly for task cleanup
+        try:
+            await asyncio.sleep(0.1)
+        except:
+            pass
+        
         # Send final UP event if key was down
         if key_down and last_event_time:
             # Stop sidetone
@@ -522,12 +601,16 @@ Examples:
             await ws_send_with_reconnect(ws, message)
         
         # Send EOT
-        eot_msg = {
-            'type': 'cw_eot',
-            'callsign': args.callsign
-        }
-        await ws.send(json.dumps(eot_msg))
-        await asyncio.sleep(0.1)
+        if connected:
+            eot_msg = {
+                'type': 'cw_eot',
+                'callsign': args.callsign
+            }
+            try:
+                await ws.send(json.dumps(eot_msg))
+                await asyncio.sleep(0.1)
+            except:
+                pass
         
         # Cleanup
         if sidetone:

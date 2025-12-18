@@ -245,7 +245,7 @@ python3 cw_xiao_sender_tcp_ts.py localhost --debug
 | Scenario | Use | Why |
 |----------|-----|-----|
 | **LAN/same network** | `cw_xiao_sender_tcp_ts.py` | Lower latency, direct TCP connection |
-| **Internet/remote** | `cw_xiao_sender_web.py` | Browser-based decoder, no firewall issues |
+| **Internet/remote** | `cw_xiao_sender_tcp_ts.py` | Lower latency, direct TCP connection |
 | **Multi-user practice** | `cw_xiao_sender_web.py` | Room-based sharing via web platform |
 | **Local practice** | `cw_xiao_sender_tcp_ts.py` | Simpler, no internet required |
 | **Demo/public display** | `cw_xiao_sender_web.py` | Share link, anyone can watch/decode |

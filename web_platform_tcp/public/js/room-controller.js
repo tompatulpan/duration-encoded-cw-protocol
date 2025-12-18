@@ -530,18 +530,16 @@ async function sendElement(duration) {
   console.log('[Room] Local DOWN event:', downEvent);
   decoder.processEvent(downEvent);
   
-  // Sleep during element, sampling paddles for Mode B memory
-  const startTime = Date.now();
-  while (Date.now() - startTime < duration) {
-    await sleep(5); // Check every 5ms during element
-    
-    // Sample paddles during element transmission (Mode B)
-    if (ditPressed && keyerState === 'DAH') {
-      ditMemory = true;
-    }
-    if (dahPressed && keyerState === 'DIT') {
-      dahMemory = true;
-    }
+  // Wait for element duration (single sleep, no busy-wait)
+  await sleep(duration);
+  
+  // Sample paddles AFTER element completes (Mode B memory)
+  // This matches the Python implementation timing
+  if (ditPressed && keyerState === 'DAH') {
+    ditMemory = true;
+  }
+  if (dahPressed && keyerState === 'DIT') {
+    dahMemory = true;
   }
   
   // Key up with element duration
