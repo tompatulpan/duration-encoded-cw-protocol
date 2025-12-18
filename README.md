@@ -135,6 +135,40 @@ See [web_platform_tcp/README.md](web_platform_tcp/README.md) for web platform de
 
 ## Hardware Setup
 
+### USB HID Physical Key Interface (XIAO SAMD21) ✅
+
+**NEW:** Complete working solution for connecting physical CW keys via USB!
+
+The **[`USB_HID/`](USB_HID/)** directory contains a production-ready hardware interface:
+
+- **Seeedstudio XIAO SAMD21** microcontroller ($5)
+- **USB HID Keyboard protocol** (works on Linux/Windows/macOS)
+- **Iambic-B keyer** with paddle memory
+- **Straight key mode**
+- **TCP timestamp protocol**
+- **Real-time sidetone** with LED feedback
+
+**Quick Start:**
+```bash
+# 1. Upload firmware (Arduino IDE)
+cd USB_HID/xiao_samd21_hid_key/
+# Open .ino file, select Seeeduino XIAO board, upload
+
+# 2. Wire your paddles
+#    XIAO D2 → Dit paddle → GND
+#    XIAO D1 → Dah paddle → GND
+
+# 3. Run sender
+cd ../
+python3 cw_xiao_hidraw_sender.py <receiver_ip> --wpm 25 --debug
+
+# 4. Run receiver
+cd ../test_implementation/
+python3 cw_receiver_tcp_ts.py --jitter-buffer 150
+```
+
+**See [USB_HID/README.md](USB_HID/README.md) for complete setup guide, troubleshooting, and technical details.**
+
 ### USB Serial Adapter for Physical Keys
 
 **Pin assignments:**
@@ -203,6 +237,7 @@ Complete technical documentation is in the implementation directories:
 - ✅ TCP variants (duration-based and timestamp-based)
 - ✅ Jitter buffer with word space detection
 - ✅ Hardware key support (USB serial)
+- ✅ USB HID paddle interface (XIAO SAMD21, production ready)
 - ✅ Iambic keyer (Mode A/B)
 - ✅ Audio sidetone (TX and RX)
 - ✅ GPIO output (Raspberry Pi)
@@ -210,7 +245,7 @@ Complete technical documentation is in the implementation directories:
 - ✅ Web platform (experimental)
 
 **Future possibilities:**
-- USB HID paddle interface (Arduino-based, no serial drivers needed)
+- ESP32 HID variant (TinyUSB issues to resolve)
 - Multi-operator relay server
 - Additional error correction methods
 

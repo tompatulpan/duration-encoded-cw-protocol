@@ -184,6 +184,92 @@ UDP is preferred for low-latency applications:
 - `cw_auto_sender_tcp_ts.py` - **TCP automated sender with timestamps (burst-resistant)**
 - `cw_usb_key_sender_tcp_ts.py` - **USB physical key sender with timestamps (WiFi-optimized)**
 
+---
+
+## USB HID Physical Key Interface
+
+For connecting real CW keys/paddles to your computer, see the **[`USB_HID/`](../USB_HID/)** directory containing a complete hardware solution.
+
+### XIAO SAMD21 Solution (Production Ready) ✅
+
+**Hardware:**
+- Seeedstudio XIAO SAMD21 microcontroller ($5)
+- Standard CW paddle or straight key
+- USB-C cable
+
+**Features:**
+- ✅ **USB HID Keyboard interface** - Works immediately on Linux/Windows/macOS
+- ✅ **Iambic-B keyer** with paddle memory (paddle sampling fix applied)
+- ✅ **Straight key mode** - Direct key-down/key-up transmission
+- ✅ **TCP timestamp protocol** - WiFi-optimized, burst-resistant scheduling
+- ✅ **Real-time sidetone** - 600 Hz TX feedback with visual LED indicator
+- ✅ **Debug output** - Comprehensive timing and event logging
+
+**Quick Start:**
+
+1. **Upload firmware** (Arduino IDE):
+   ```bash
+   cd ../USB_HID/xiao_samd21_hid_key
+   # Open xiao_samd21_hid_key.ino in Arduino IDE
+   # Select: Tools → Board → Seeeduino XIAO
+   # Upload to XIAO
+   ```
+
+2. **Wire your key:**
+   ```
+   XIAO Pin D2 (PA08) → Dit paddle → GND
+   XIAO Pin D1 (PA04) → Dah paddle → GND
+   ```
+   
+3. **Run sender:**
+   ```bash
+   cd ../USB_HID
+   python3 cw_xiao_hidraw_sender.py <receiver_ip> --wpm 25 --debug
+   ```
+
+4. **Run receiver** (separate machine or terminal):
+   ```bash
+   cd ../test_implementation
+   python3 cw_receiver_tcp_ts.py --jitter-buffer 150
+   ```
+
+**XIAO vs ESP32 Comparison:**
+
+| Feature | XIAO SAMD21 ✅ | ESP32 ⚠️ |
+|---------|---------------|----------|
+| USB HID Support | ✅ Arduino Keyboard library | ❌ TinyUSB issues |
+| Linux Compatibility | ✅ Works out-of-box (hidraw) | ❌ hidapi open() fails |
+| Setup Complexity | ✅ Upload & go | ⚠️ Multiple library dependencies |
+| Cost | $5 | $3-10 |
+| Iambic Keyer | ✅ Mode A/B with fresh paddle sampling | N/A |
+| **Status** | **Production Ready** | Future work |
+
+**Architecture:**
+```
+Physical Key → XIAO (Keyboard HID) → USB → Python (hidraw) → TCP+TS Protocol → Receiver
+              └─ Firmware sends Ctrl keys (0x01=Dit, 0x10=Dah)
+                 Python reads raw HID reports
+                 Iambic keyer with paddle reader callback
+                 TCP timestamp protocol (port 7356)
+```
+
+**Why XIAO works better:**
+1. **Arduino Keyboard library** - Proven USB HID implementation (used by Vail-CW)
+2. **Raw hidraw access** - Python reads `/dev/hidraw*` directly (no library dependencies)
+3. **Simple protocol** - Keyboard modifier keys (Left Ctrl = dit, Right Ctrl = dah)
+4. **Fresh paddle sampling** - Keyer polls hardware during elements (no stale state)
+
+**Full documentation:** See [`../USB_HID/README.md`](../USB_HID/README.md) for:
+- Complete hardware setup guide
+- Wiring diagrams and pin assignments
+- Troubleshooting (permissions, device detection)
+- Testing procedures
+- Firmware modification guide
+
+**ESP32 Status:** On hold due to USB HID library compatibility issues on Linux. The XIAO SAMD21 solution above is the recommended approach for physical key interfaces.
+
+---
+
 ## Protocol Design Documentation
 
 **How does manual keying work?**
@@ -496,6 +582,68 @@ pip install pyaudio numpy
 - **numpy** - Audio signal processing (required with PyAudio)
 
 Without these, the system runs in "visual only" mode (no audio).
+
+## Installation Scripts
+
+### Quick Install (Recommended)
+
+Automated installers are provided for easy setup on **Linux** and **Windows**:
+
+**Linux (Ubuntu/Debian/Fedora):**
+```bash
+./install.sh
+```
+
+The Linux installer will:
+- ✅ Check Python 3 installation
+- ✅ Install dependencies (pyserial, pyaudio, numpy, websockets)
+- ✅ Create launcher commands in `~/bin/`
+- ✅ Copy example config to `~/.cw_sender.ini`
+- ⚠️ Prompt to add user to `dialout` group (for USB serial access)
+
+**Windows (10/11):**
+```cmd
+install.bat
+```
+
+The Windows installer will:
+- ✅ Check Python installation
+- ✅ Install dependencies (pyserial, pyaudio, numpy, websockets)
+- ✅ Create launcher batch files in `%USERPROFILE%\`
+- ✅ Copy example config to `%USERPROFILE%\.cw_sender.ini`
+
+### What Gets Installed
+
+Both installers configure:
+- **Dependencies:** All required Python packages (pyserial for USB keys, pyaudio/numpy for audio, websockets for web platform)
+- **Launchers:** Command shortcuts for easy access to senders/receivers
+- **Config file:** Default settings (`cw_sender.ini`) for network host, port, WPM, keyer mode
+
+### Post-Install Configuration
+
+**Linux - Serial Port Access:**
+```bash
+sudo usermod -a -G dialout $USER
+# Log out and back in for changes to take effect
+```
+
+**Windows - Serial Port Drivers:**
+USB-to-Serial drivers (FTDI, CH340, CP210x) usually auto-install on Windows 10/11.
+
+**Configure receiver IP address:**
+```bash
+# Linux
+nano ~/.cw_sender.ini
+
+# Windows
+notepad %USERPROFILE%\.cw_sender.ini
+```
+
+Edit the `host` setting under `[network]` to point to your receiver's IP address.
+
+### Manual Installation
+
+If you prefer manual setup, see [INSTALL.md](INSTALL.md) for detailed instructions.
 
 ## Usage
 
