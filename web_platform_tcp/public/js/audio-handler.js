@@ -50,11 +50,10 @@ class AudioHandler {
    */
   setKey(callsign, keyDown, frequency = null) {
     if (!this.enabled || !this.audioContext) {
-      console.log('[Audio] Skipping - disabled or no context');
       return;
     }
     
-    console.log('[Audio] setKey:', callsign, 'keyDown:', keyDown);
+    if (window.DEBUG) console.log('[Audio] setKey:', callsign, 'keyDown:', keyDown);
     
     // Resume context if needed
     if (this.audioContext.state === 'suspended') {

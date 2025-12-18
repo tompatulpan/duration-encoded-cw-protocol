@@ -162,8 +162,13 @@ CW_PROTOCOL_SPECIFICATION.md
 DOC/
 Doc/
 *.md
+!README.md
 *.sh
+!install.sh
 log.txt
+
+obsolete/
+*.bak
 
 FEC/
 FEC_BUGFIXES.md

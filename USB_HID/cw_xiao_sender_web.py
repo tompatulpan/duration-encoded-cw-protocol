@@ -230,9 +230,21 @@ Examples:
         print("Error: Invalid callsign")
         return 1
     
-    # Normalize URL - strip protocol if present, then add wss://
-    server_url = args.url.replace('wss://', '').replace('ws://', '')
-    ws_url = f"wss://{server_url}"
+    # Normalize URL - strip any protocol and re-add based on input
+    # If user provided http:// use ws://, if https:// use wss://
+    # If no protocol, default to ws:// for localhost, wss:// for others
+    original_url = args.url
+    server_url = args.url.replace('wss://', '').replace('ws://', '').replace('https://', '').replace('http://', '')
+    
+    # Determine protocol based on original input or hostname
+    if original_url.startswith('http://') or original_url.startswith('ws://'):
+        ws_url = f"ws://{server_url}"
+    elif original_url.startswith('https://') or original_url.startswith('wss://'):
+        ws_url = f"wss://{server_url}"
+    elif 'localhost' in server_url or '127.0.0.1' in server_url or server_url.startswith('192.168.') or server_url.startswith('10.'):
+        ws_url = f"ws://{server_url}"  # Local network - use unencrypted
+    else:
+        ws_url = f"wss://{server_url}"  # Internet - use encrypted
     
     # Print header
     print("=" * 70)

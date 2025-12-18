@@ -30,7 +30,7 @@ class JitterBuffer {
   addEvent(event) {
     const now = performance.now();
     
-    console.log('[JitterBuffer] Adding event:', event.callsign, 'key:', event.key_down, 'ts:', event.timestamp_ms);
+    if (window.DEBUG) console.log('[JitterBuffer] Adding event:', event.callsign, 'key:', event.key_down, 'ts:', event.timestamp_ms);
     
     // Get or create sender timeline
     if (!this.senderTimelines.has(event.callsign)) {
@@ -55,10 +55,12 @@ class JitterBuffer {
     
     // Debug: Log scheduling info
     const scheduleDelay = playoutTime - now;
-    console.log('[JitterBuffer] Scheduling:', 
-                'ts=' + event.timestamp_ms + 'ms',
-                'playout_in=' + scheduleDelay.toFixed(1) + 'ms',
-                'queue_depth=' + (this.queue.length + 1));
+    if (window.DEBUG) {
+      console.log('[JitterBuffer] Scheduling:', 
+                  'ts=' + event.timestamp_ms + 'ms',
+                  'playout_in=' + scheduleDelay.toFixed(1) + 'ms',
+                  'queue_depth=' + (this.queue.length + 1));
+    }
     
     // Add to queue
     this.queue.push({
@@ -106,10 +108,10 @@ class JitterBuffer {
       const lateness = now - event.playoutTime;
       if (lateness > 10) {
         this.stats.lateEvents++;
-        console.warn(`[JitterBuffer] Late event: ${lateness.toFixed(1)}ms`);
+        if (window.DEBUG) console.warn(`[JitterBuffer] Late event: ${lateness.toFixed(1)}ms`);
       }
       
-      console.log('[JitterBuffer] Playing event:', event.callsign, 'key:', event.key_down);
+      if (window.DEBUG) console.log('[JitterBuffer] Playing event:', event.callsign, 'key:', event.key_down);
       
       // Play event
       if (this.onPlayEvent) {

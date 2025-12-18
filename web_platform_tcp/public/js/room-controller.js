@@ -7,13 +7,26 @@
 
 // Configuration
 const WORKER_URL = location.hostname === 'localhost'
-  ? 'ws://localhost:8788'
+  ? 'ws://localhost:8787'
   : 'wss://cw-studio-relay.data4-9de.workers.dev';
 
 // Parse URL parameters
 const urlParams = new URLSearchParams(window.location.search);
 const roomId = urlParams.get('room') || 'main';
 const callsign = urlParams.get('callsign') || 'TEST';
+
+// Debug mode (disable verbose logging for performance)
+// Can be enabled via URL parameter (?debug=true) or UI checkbox
+let DEBUG = urlParams.get('debug') === 'true';
+window.DEBUG = DEBUG;
+if (DEBUG) {
+  console.log('=======================================================');
+  console.log('[Room] DEBUG MODE ENABLED - Verbose logging active');
+  console.log('=======================================================');
+} else {
+  console.log('[Room] Production mode - Verbose logging disabled for performance');
+  console.log('[Room] Toggle debug mode using Settings panel checkbox');
+}
 
 // Components
 let client;
@@ -58,7 +71,7 @@ const morseTable = {
  * Initialize application
  */
 async function init() {
-  console.log(`[Room] Initializing - Room: ${roomId}, Callsign: ${callsign}`);
+  if (DEBUG) console.log(`[Room] Initializing - Room: ${roomId}, Callsign: ${callsign}`);
   
   // Update UI
   document.getElementById('roomName').textContent = `Room: ${roomId}`;
@@ -97,46 +110,54 @@ async function init() {
 function setupCallbacks() {
   // Client callbacks
   client.onConnected = (data) => {
-    console.log('[Room] Joined room:', data);
-    console.log('[Room] My peer ID:', data.peerId);
-    console.log('[Room] Existing peers:', data.peers);
+    if (DEBUG) {
+      console.log('[Room] Joined room:', data);
+      console.log('[Room] My peer ID:', data.peerId);
+      console.log('[Room] Existing peers:', data.peers);
+    }
     updateUsersList(data.peers);
   };
   
   client.onPeerJoined = (data) => {
-    console.log('[Room] Peer joined:', data.callsign);
+    if (DEBUG) console.log('[Room] Peer joined:', data.callsign);
     addUser(data.peerId, data.callsign);
   };
   
   client.onPeerLeft = (data) => {
-    console.log('[Room] Peer left:', data.callsign, data.peerId);
+    if (DEBUG) console.log('[Room] Peer left:', data.callsign, data.peerId);
     removeUser(data.peerId, data.callsign);
   };
   
   client.onCwEvent = (event) => {
-    console.log('[Room] Received CW event from:', event.callsign, event.key_down ? 'DOWN' : 'UP');
+    if (DEBUG) console.log('[Room] Received CW event from:', event.callsign, event.key_down ? 'DOWN' : 'UP');
     // Add to jitter buffer
     jitterBuffer.addEvent(event);
   };
   
   // Jitter buffer callback
   jitterBuffer.onPlayEvent = (event) => {
-    console.log('[Room] ===== PLAYOUT EVENT =====');
-    console.log('[Room] Playing event from jitter buffer:', event);
-    console.log('[Room] Callsign:', event.callsign, 'Key:', event.key_down, 'Duration:', event.duration_ms);
+    if (DEBUG) {
+      console.log('[Room] ===== PLAYOUT EVENT =====');
+      console.log('[Room] Playing event from jitter buffer:', event);
+      console.log('[Room] Callsign:', event.callsign, 'Key:', event.key_down, 'Duration:', event.duration_ms);
+    }
     
     // Only play audio for remote users (not your own echo)
     // Local sidetone is already played immediately in handleKeyDown/Up
     if (event.callsign !== callsign) {
       audioHandler.setKey(event.callsign, event.key_down);
     } else {
-      console.log('[Room] Skipping own echo from jitter buffer');
+      if (DEBUG) console.log('[Room] Skipping own echo from jitter buffer');
     }
     
     // Decode (for display)
-    console.log('[Room] Calling decoder.processEvent()');
+    if (DEBUG) {
+      console.log('[Room] Calling decoder.processEvent()');
+    }
     decoder.processEvent(event);
-    console.log('[Room] Decoder called');
+    if (DEBUG) {
+      console.log('[Room] Decoder called');
+    }
     
     // Update stats
     updateStats();
@@ -144,12 +165,12 @@ function setupCallbacks() {
   
   // Decoder callbacks
   decoder.onDecodedChar = (callsign, char, wpm) => {
-    console.log('[Room] Decoded character:', callsign, char, wpm);
+    if (DEBUG) console.log('[Room] Decoded character:', callsign, char, wpm);
     appendDecodedText(callsign, char, wpm);
   };
   
   decoder.onWordSpace = (callsign) => {
-    console.log('[Room] Word space:', callsign);
+    if (DEBUG) console.log('[Room] Word space:', callsign);
     appendDecodedText(callsign, ' ', 0);
   };
 }
@@ -345,6 +366,40 @@ function setupUI() {
     audioHandler.setEnabled(e.target.checked);
   });
   
+  // Debug mode toggle
+  const debugModeCheckbox = document.getElementById('debugMode');
+  debugModeCheckbox.checked = DEBUG; // Set initial state from URL param
+  
+  debugModeCheckbox.addEventListener('change', (e) => {
+    window.DEBUG = e.target.checked;
+    
+    // Update visual indicator
+    const indicator = document.getElementById('debugStatusIndicator');
+    if (indicator) {
+      indicator.textContent = e.target.checked ? '✓' : '✗';
+      indicator.style.color = e.target.checked ? '#0a0' : '#666';
+    }
+    
+    if (e.target.checked) {
+      console.log('=======================================================');
+      console.log('[Room] DEBUG MODE ENABLED - Verbose logging active');
+      console.log('[Room] WARNING: This will increase CPU usage!');
+      console.log('=======================================================');
+    } else {
+      console.log('=======================================================');
+      console.log('[Room] DEBUG MODE DISABLED - Production mode');
+      console.log('[Room] CPU usage should be minimal now');
+      console.log('=======================================================');
+    }
+  });
+  
+  // Update initial debug indicator
+  const debugIndicator = document.getElementById('debugStatusIndicator');
+  if (debugIndicator && DEBUG) {
+    debugIndicator.textContent = '✓';
+    debugIndicator.style.color = '#0a0';
+  }
+  
   const sidetoneFreq = document.getElementById('sidetoneFreq');
   const freqValue = document.getElementById('freqValue');
   sidetoneFreq.addEventListener('input', (e) => {
@@ -527,7 +582,7 @@ async function sendElement(duration) {
     duration_ms: previousSpacing,
     timestamp_ms: now
   };
-  console.log('[Room] Local DOWN event:', downEvent);
+  if (DEBUG) console.log('[Room] Local DOWN event:', downEvent);
   decoder.processEvent(downEvent);
   
   // Wait for element duration (single sleep, no busy-wait)
@@ -554,7 +609,7 @@ async function sendElement(duration) {
     duration_ms: duration,
     timestamp_ms: lastKeyUpTime
   };
-  console.log('[Room] Local UP event:', upEvent);
+  if (DEBUG) console.log('[Room] Local UP event:', upEvent);
   decoder.processEvent(upEvent);
   
   // Wait for element space
@@ -565,7 +620,7 @@ async function sendElement(duration) {
  * Send text as Morse code
  */
 async function sendText(text) {
-  console.log('[Room] Sending text:', text);
+  if (DEBUG) console.log('[Room] Sending text:', text);
   
   const words = text.toUpperCase().split(' ');
   let previousSpacing = 0; // Track spacing before each element
@@ -627,7 +682,7 @@ async function sendText(text) {
     }
   }
   
-  console.log('[Room] Text sent');
+  if (DEBUG) console.log('[Room] Text sent');
 }
 
 /**
@@ -796,7 +851,7 @@ function setupAudioPermission() {
   const enableAudio = async () => {
     await audioHandler.resume();
     banner.style.display = 'none';
-    console.log('[Room] Audio enabled by user');
+    if (DEBUG) console.log('[Room] Audio enabled by user');
   };
   
   enableBtn.addEventListener('click', enableAudio);

@@ -138,6 +138,13 @@
                     Audio Enabled
                 </label>
                 <label>
+                    <input type="checkbox" id="debugMode">
+                    Debug Mode <span id="debugStatusIndicator" style="color: #666;">✗</span>
+                </label>
+                <small style="color: #666; display: block; margin-left: 20px; margin-top: -5px;">
+                    Enable verbose console logging (increases CPU)
+                </small>
+                <label>
                     Sidetone Frequency:
                     <input type="range" id="sidetoneFreq" min="400" max="1000" value="700" step="50">
                     <span id="freqValue">700</span> Hz

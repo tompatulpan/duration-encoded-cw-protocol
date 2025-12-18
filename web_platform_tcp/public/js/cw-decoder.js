@@ -60,10 +60,12 @@ class CWDecoder {
   processEvent(event) {
     const { callsign, key_down, duration_ms, timestamp_ms } = event;
     
-    console.log('[Decoder] Processing event:', callsign, 
-                'key:', key_down ? 'DOWN' : 'UP', 
-                'dur:', duration_ms + 'ms', 
-                'ts:', timestamp_ms + 'ms');
+    if (window.DEBUG) {
+      console.log('[Decoder] Processing event:', callsign, 
+                  'key:', key_down ? 'DOWN' : 'UP', 
+                  'dur:', duration_ms + 'ms', 
+                  'ts:', timestamp_ms + 'ms');
+    }
     
     // Get or create user state
     if (!this.users.has(callsign)) {
@@ -77,7 +79,7 @@ class CWDecoder {
         consecutiveElementSpaces: 0,
         isManualKeying: false
       });
-      console.log('[Decoder] New user:', callsign);
+      if (window.DEBUG) console.log('[Decoder] New user:', callsign);
     }
     
     const user = this.users.get(callsign);
@@ -97,7 +99,7 @@ class CWDecoder {
       // duration_ms = how long we were UP (spacing)
       const spaceDuration = duration_ms;
       
-      console.log('[Decoder]', callsign, '→ DOWN transition, was UP for:', spaceDuration + 'ms');
+      if (window.DEBUG) console.log('[Decoder]', callsign, '→ DOWN transition, was UP for:', spaceDuration + 'ms');
       
       // Check for word/letter space BEFORE processing new element
       const letterSpaceThreshold = user.avgDit * this.TIMING_CONFIG.letterSpaceThreshold;
@@ -105,24 +107,30 @@ class CWDecoder {
       const elementSpaceThreshold = user.avgDit * 1.5; // ~1 dit
       
       // DIAGNOSTIC: Log threshold calculations
-      console.log('[Decoder] DIAGNOSTIC:', callsign, 
-                  'spaceDuration=' + spaceDuration + 'ms',
-                  'avgDit=' + user.avgDit.toFixed(1) + 'ms',
-                  'letterThreshold=' + letterSpaceThreshold.toFixed(1) + 'ms',
-                  'wordThreshold=' + wordSpaceThreshold.toFixed(1) + 'ms',
-                  'buffer=' + user.buffer.join(''));
+      if (window.DEBUG) {
+        console.log('[Decoder] DIAGNOSTIC:', callsign, 
+                    'spaceDuration=' + spaceDuration + 'ms',
+                    'avgDit=' + user.avgDit.toFixed(1) + 'ms',
+                    'letterThreshold=' + letterSpaceThreshold.toFixed(1) + 'ms',
+                    'wordThreshold=' + wordSpaceThreshold.toFixed(1) + 'ms',
+                    'buffer=' + user.buffer.join(''));
+      }
       
       if (spaceDuration > wordSpaceThreshold) {
+      if (window.DEBUG) {
         console.log('[Decoder]', callsign, '*** WORD SPACE ***', spaceDuration + 'ms', 
                     '(threshold:', wordSpaceThreshold.toFixed(0) + 'ms)');
+      }
         this.flushCharacter(callsign, user);
         user.isManualKeying = false;
         if (this.onWordSpace) {
           this.onWordSpace(callsign);
         }
       } else if (spaceDuration > letterSpaceThreshold) {
-        console.log('[Decoder]', callsign, '*** LETTER SPACE ***', spaceDuration + 'ms',
-                    '(threshold:', letterSpaceThreshold.toFixed(0) + 'ms)');
+        if (window.DEBUG) {
+          console.log('[Decoder]', callsign, '*** LETTER SPACE ***', spaceDuration + 'ms',
+                      '(threshold:', letterSpaceThreshold.toFixed(0) + 'ms)');
+        }
         this.flushCharacter(callsign, user);
         user.isManualKeying = false;
       } else if (spaceDuration > elementSpaceThreshold) {
@@ -130,7 +138,7 @@ class CWDecoder {
         user.consecutiveElementSpaces++;
         if (user.consecutiveElementSpaces >= 3 && !user.isManualKeying) {
           user.isManualKeying = true;
-          console.log('[Decoder]', callsign, 'Manual paddle keying detected');
+          if (window.DEBUG) console.log('[Decoder]', callsign, 'Manual paddle keying detected');
         }
       }
       
@@ -139,7 +147,7 @@ class CWDecoder {
       // duration_ms = how long we were DOWN (element duration)
       const elementDuration = duration_ms;
       
-      console.log('[Decoder]', callsign, '→ UP transition, was DOWN for:', elementDuration + 'ms');
+      if (window.DEBUG) console.log('[Decoder]', callsign, '→ UP transition, was DOWN for:', elementDuration + 'ms');
       
       // Classify as dit or dah
       const threshold = user.avgDit * this.TIMING_CONFIG.ditDahThreshold;
@@ -174,10 +182,12 @@ class CWDecoder {
       // Reset manual keying counter on actual elements
       user.consecutiveElementSpaces = 0;
       
-      console.log('[Decoder]', callsign, 'Element:', isDit ? 'dit' : 'dah', 
-                  elementDuration + 'ms', 'buffer:', user.buffer.join(''), 
-                  'wpm:', user.wpm, 'avgDit:', user.avgDit.toFixed(1) + 'ms',
-                  user.isManualKeying ? '(manual)' : '(auto)');
+      if (window.DEBUG) {
+        console.log('[Decoder]', callsign, 'Element:', isDit ? 'dit' : 'dah', 
+                    elementDuration + 'ms', 'buffer:', user.buffer.join(''), 
+                    'wpm:', user.wpm, 'avgDit:', user.avgDit.toFixed(1) + 'ms',
+                    user.isManualKeying ? '(manual)' : '(auto)');
+      }
       
       // Set timeout for end-of-transmission
       const letterSpaceThreshold = user.avgDit * this.TIMING_CONFIG.letterSpaceThreshold;
@@ -186,7 +196,7 @@ class CWDecoder {
         : letterSpaceThreshold * 2;
       
       user.flushTimer = setTimeout(() => {
-        console.log('[Decoder]', callsign, 'Flush timeout triggered');
+        if (window.DEBUG) console.log('[Decoder]', callsign, 'Flush timeout triggered');
         this.flushCharacter(callsign, user);
         user.isManualKeying = false;
       }, timeoutMs);
@@ -197,20 +207,20 @@ class CWDecoder {
    * Flush current character buffer
    */
   flushCharacter(callsign, user) {
-    console.log('[Decoder] flushCharacter called for:', callsign, 'buffer:', user.buffer.join(''), 'length:', user.buffer.length);
+    if (window.DEBUG) console.log('[Decoder] flushCharacter called for:', callsign, 'buffer:', user.buffer.join(''), 'length:', user.buffer.length);
     
     if (user.buffer.length === 0) {
-      console.log('[Decoder] Buffer empty, nothing to flush');
+      if (window.DEBUG) console.log('[Decoder] Buffer empty, nothing to flush');
       return;
     }
     
     const pattern = user.buffer.join('');
     const char = this.morseTable[pattern] || '?';
     
-    console.log('[Decoder]', callsign, 'DECODED:', pattern, '→', char, 'wpm:', user.wpm);
+    if (window.DEBUG) console.log('[Decoder]', callsign, 'DECODED:', pattern, '→', char, 'wpm:', user.wpm);
     
     if (this.onDecodedChar) {
-      console.log('[Decoder] Calling onDecodedChar callback');
+      if (window.DEBUG) console.log('[Decoder] Calling onDecodedChar callback');
       this.onDecodedChar(callsign, char, user.wpm);
     } else {
       console.log('[Decoder] ERROR: onDecodedChar callback is not set!');
