@@ -254,7 +254,7 @@ Complete technical documentation is in the implementation directories:
 ## Acknowledgments
 
 Inspired by:
-- Protocol concept: Thomas Sailer (DL4YHF)
+- Protocol concept: Wolfgang Buescher (DL4YHF)
 - Iambic keyer reference: Steve Haynal (n1gp/iambic-keyer)
 - Ideas from Stu, KZ4LN
 

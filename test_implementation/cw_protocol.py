@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-CW Protocol Implementation - DL4YHF-inspired
-Simple UDP-based protocol for CW keying events
+Duration-Encoded CW (DECW) Protocol for UDP/TCP keying events
 """
 
 import struct
@@ -12,7 +11,12 @@ PROTOCOL_VERSION = 0x40  # 01 in bits 7-6
 UDP_PORT = 7355
 
 class CWProtocol:
-    """DL4YHF-inspired CW protocol encoder/decoder"""
+    """Duration-Encoded CW (DECW) Protocol encoder/decoder
+    
+    Custom protocol for transmitting Morse code timing over UDP/TCP.
+    Encodes key state changes with precise timing information using
+    optimized variable-resolution encoding.
+    """
     
     def __init__(self):
         self.sequence_number = 0
