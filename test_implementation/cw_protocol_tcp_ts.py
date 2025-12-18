@@ -52,9 +52,14 @@ class CWProtocolTCPTimestamp(CWProtocol):
             return True
             
         except Exception as e:
-            print(f"[TCP] Connection failed: {e}")
             self.connected = False
-            return False
+            if self.sock:
+                try:
+                    self.sock.close()
+                except:
+                    pass
+                self.sock = None
+            raise  # Re-raise exception for caller to handle
     
     def send_packet(self, key_down, duration_ms, sequence=None):
         """
@@ -110,9 +115,14 @@ class CWProtocolTCPTimestamp(CWProtocol):
                 return True
                 
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
-            print(f"[TCP] Send failed: {e}")
             self.connected = False
-            return False
+            if self.sock:
+                try:
+                    self.sock.close()
+                except:
+                    pass
+                self.sock = None
+            raise  # Re-raise for caller to handle reconnection
     
     def send_eot_packet(self):
         """Send End-of-Transmission packet"""

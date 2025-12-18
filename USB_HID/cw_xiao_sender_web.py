@@ -269,7 +269,8 @@ Examples:
         join_msg = {
             'type': 'join',
             'roomId': 'main',  # Default room
-            'callsign': args.callsign
+            'callsign': args.callsign,
+            'muteMyCallsign': True  # Mute own audio on web page (sidetone only in Python)
         }
         await ws.send(json.dumps(join_msg))
         print(f"Sent join request as {args.callsign}...")
@@ -310,6 +311,68 @@ Examples:
     last_event_time = session_start
     sequence = 0
     loop_count = 0
+    
+    # WebSocket reconnection helper
+    async def ws_send_with_reconnect(ws_ref, message_dict):
+        """Send WebSocket message with automatic reconnection on failure"""
+        nonlocal ws
+        
+        max_reconnect_attempts = 5
+        reconnect_delay = 2.0
+        
+        # First, try to send
+        try:
+            await ws.send(json.dumps(message_dict))
+            return True
+        except (websockets.exceptions.ConnectionClosed, 
+                websockets.exceptions.WebSocketException,
+                Exception) as e:
+            print(f"\n[WebSocket] Connection lost: {e}")
+            print(f"[WebSocket] Attempting to reconnect...")
+            
+            # Try to reconnect with multiple attempts
+            for attempt in range(max_reconnect_attempts):
+                try:
+                    await asyncio.sleep(reconnect_delay)
+                    
+                    # Reconnect
+                    ws = await websockets.connect(ws_url, ping_interval=None, ping_timeout=None)
+                    
+                    # Re-join room
+                    join_msg = {
+                        'type': 'join',
+                        'roomId': 'main',
+                        'callsign': args.callsign,
+                        'muteMyCallsign': True  # Mute own audio on web page
+                    }
+                    await ws.send(json.dumps(join_msg))
+                    
+                    # Wait for confirmation
+                    response = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                    data = json.loads(response)
+                    
+                    if data.get('type') in ['joined', 'echo']:
+                        print(f"[WebSocket] ✓ Reconnected to {ws_url}")
+                        
+                        # Try to send the original message
+                        try:
+                            await ws.send(json.dumps(message_dict))
+                            return True
+                        except Exception as send_err:
+                            print(f"[WebSocket] Send after reconnection failed: {send_err}")
+                            continue
+                    else:
+                        raise Exception(f"Unexpected response: {data.get('type')}")
+                        
+                except Exception as reconnect_err:
+                    if attempt < max_reconnect_attempts - 1:
+                        print(f"[WebSocket] Reconnection attempt {attempt + 1}/{max_reconnect_attempts} failed, retrying...")
+                    else:
+                        print(f"[WebSocket] ✗ Could not reconnect after {max_reconnect_attempts} attempts")
+                        print(f"[WebSocket] Continuing without connection (packets will be dropped)")
+                        return False
+            
+            return False
     
     # Helper function to read current paddle states (used by iambic keyer)
     def read_paddle_states():
@@ -381,7 +444,7 @@ Examples:
                 # Send any queued events
                 while pending_events:
                     message = pending_events.pop(0)
-                    await ws.send(json.dumps(message))
+                    await ws_send_with_reconnect(ws, message)
                 
                 await asyncio.sleep(0.001)  # 1ms polling
             
@@ -416,7 +479,9 @@ Examples:
                     }
                     
                     # Send message
-                    await ws.send(json.dumps(message))
+                    if not await ws_send_with_reconnect(ws, message):
+                        print("\n[ERROR] Connection lost and could not reconnect.")
+                        # Continue with local sidetone even without connection
                     sequence = (sequence + 1) % 256
                     
                     # Update state
@@ -454,7 +519,7 @@ Examples:
                 'timestamp_ms': timestamp_ms,
                 'sequence': sequence
             }
-            await ws.send(json.dumps(message))
+            await ws_send_with_reconnect(ws, message)
         
         # Send EOT
         eot_msg = {
@@ -476,4 +541,8 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(asyncio.run(main()))
+    try:
+        sys.exit(asyncio.run(main()))
+    except KeyboardInterrupt:
+        print("\n\nShutdown requested (Ctrl+C)")
+        sys.exit(0)

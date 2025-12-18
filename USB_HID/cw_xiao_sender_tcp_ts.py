@@ -245,17 +245,73 @@ Examples:
         keyer = IambicKeyer(args.wpm, mode=keyer_mode_letter)
         print(f"Keyer: Iambic Mode {keyer_mode_letter}, {args.wpm} WPM")
     
-    # Connect to receiver
-    try:
-        protocol = CWProtocolTCPTimestamp()
-        protocol.connect(args.host, args.port)
-        print(f"Connected to {args.host}:{args.port}")
-    except Exception as e:
-        print(f"Error connecting to receiver: {e}")
-        hid_reader.close()
-        if sidetone:
-            sidetone.close()
-        return 1
+    # Connect to receiver with retry logic
+    max_retries = 10
+    retry_delay = 2.0
+    connect_timeout = 3.0  # Socket timeout for quick retry
+    protocol = None
+    
+    for attempt in range(max_retries):
+        try:
+            protocol = CWProtocolTCPTimestamp()
+            protocol.connect(args.host, args.port, timeout=connect_timeout)
+            print(f"Connected to {args.host}:{args.port}")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"Connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                print(f"Retrying in {retry_delay} seconds... (waiting for receiver)")
+                time.sleep(retry_delay)
+            else:
+                print(f"\nError: Could not connect after {max_retries} attempts")
+                print(f"Make sure receiver is running: python3 cw_receiver_tcp_ts.py")
+                hid_reader.close()
+                if sidetone:
+                    sidetone.close()
+                return 1
+    
+    # Helper function to send with auto-reconnect on connection loss
+    def send_packet_with_reconnect(key_down_state, duration_ms):
+        """Send packet with automatic reconnection on failure"""
+        nonlocal protocol
+        
+        # First, try to send
+        try:
+            protocol.send_packet(key_down_state, duration_ms)
+            return True
+        except (BrokenPipeError, ConnectionResetError, OSError) as e:
+            print(f"\n[TCP] Connection lost: {e}")
+            print(f"[TCP] Attempting to reconnect...")
+            
+            # Try to reconnect with multiple attempts
+            max_reconnect_attempts = 5
+            reconnect_delay = 2.0
+            
+            for attempt in range(max_reconnect_attempts):
+                try:
+                    protocol.close()
+                    time.sleep(reconnect_delay)
+                    protocol = CWProtocolTCPTimestamp()
+                    protocol.connect(args.host, args.port, timeout=connect_timeout)
+                    print(f"[TCP] ✓ Reconnected to {args.host}:{args.port}")
+                    
+                    # Try to send the packet again after successful reconnection
+                    try:
+                        protocol.send_packet(key_down_state, duration_ms)
+                        return True
+                    except Exception as send_err:
+                        print(f"[TCP] Send after reconnection failed: {send_err}")
+                        continue  # Try reconnecting again
+                        
+                except Exception as reconnect_err:
+                    if attempt < max_reconnect_attempts - 1:
+                        print(f"[TCP] Reconnection attempt {attempt + 1}/{max_reconnect_attempts} failed, retrying...")
+                    else:
+                        print(f"[TCP] ✗ Could not reconnect after {max_reconnect_attempts} attempts")
+                        print(f"[TCP] Continuing without connection (packets will be dropped)")
+                        return False
+            
+            return False
     
     print("\nReady to transmit (Ctrl+C to exit)")
     if args.debug:
@@ -296,19 +352,20 @@ Examples:
         previous_duration_ms = min(previous_duration_ms, 65535)
         
         # Send packet with PREVIOUS state's duration
-        protocol.send_packet(key_down_state, previous_duration_ms)
+        if not send_packet_with_reconnect(key_down_state, previous_duration_ms):
+            raise ConnectionError("Failed to send packet after reconnection attempts")
         
         # Update sidetone
         if sidetone:
             sidetone.set_key(key_down_state)
         
-        # Debug output - show ELEMENT duration (what keyer is sending)
+        # Debug output - show what we SENT in packet (previous state duration)
         state_str = "DOWN" if key_down_state else "UP"
         if args.debug:
             timestamp_ms = int((now - transmission_start) * 1000)
-            print(f"[SEND] {state_str} {duration_ms:5.1f}ms (ts={timestamp_ms}ms)")
+            print(f"[SEND] {state_str} {previous_duration_ms:5d}ms (ts={timestamp_ms}ms)")
         else:
-            print(f"[KEY] {state_str:4s} {duration_ms:5.1f}ms")
+            print(f"[KEY] {state_str:4s} {previous_duration_ms:5d}ms")
         
         last_event_time = now
     
@@ -343,7 +400,9 @@ Examples:
                         duration_ms = min(duration_ms, 65535)
                     
                     # Send event
-                    protocol.send_packet(new_key_down, duration_ms)
+                    if not send_packet_with_reconnect(new_key_down, duration_ms):
+                        print("\n[ERROR] Connection lost and could not reconnect. Exiting.")
+                        break
                     
                     # Update state
                     key_down = new_key_down
@@ -371,7 +430,7 @@ Examples:
         if key_down and last_event_time:
             duration_ms = int((time.time() - last_event_time) * 1000)
             duration_ms = min(duration_ms, 65535)
-            protocol.send_packet(False, duration_ms)
+            send_packet_with_reconnect(False, duration_ms)
         
         # Send EOT
         protocol.send_eot_packet()
@@ -389,4 +448,8 @@ Examples:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\n\nShutdown requested (Ctrl+C)")
+        sys.exit(0)
