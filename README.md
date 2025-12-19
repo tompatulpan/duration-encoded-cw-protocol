@@ -256,7 +256,8 @@ Complete technical documentation is in the implementation directories:
 Inspired by:
 - Protocol concept: Wolfgang Buescher (DL4YHF)
 - Iambic keyer reference: Steve Haynal (n1gp/iambic-keyer)
-- Ideas from Stu, KZ4LN
+- Ideas and testing: Stu (KZ4LN)
+- Testing: Fabian Kurz (DJ5CW/SO5CW)
 
 ---
 
