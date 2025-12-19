@@ -41,7 +41,7 @@ A compact USB HID device that appears as a keyboard to the host PC. The microcon
 └─────────────────────────────────────────────────────────────┘
                                                  ↓
                                    ┌────────────────────────┐
-                                   │   Host PC (Linux)      │
+                                   │  Host PC (Linux/Win)   │
                                    │                        │
                                    │  Python sender reads   │
                                    │  keyboard events via   │

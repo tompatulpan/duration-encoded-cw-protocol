@@ -272,6 +272,47 @@ Examples:
     if not args.no_audio:
         sidetone = SidetoneGenerator(frequency=600)  # TX frequency
     
+    # WebSocket connection variable
+    ws = None
+    
+    # Helper: Send join handshake and wait for confirmation
+    async def send_handshake():
+        """Send join message and wait for confirmation"""
+        join_msg = {
+            'type': 'join',
+            'roomId': 'main',
+            'callsign': args.callsign,
+            'muteMyCallsign': True
+        }
+        
+        if args.debug:
+            print(f"[WebSocket] Sending join: {join_msg}")
+        
+        await ws.send(json.dumps(join_msg))
+        
+        # Wait for confirmation
+        timeout = 5.0
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=0.1)
+                data = json.loads(msg)
+                
+                if data.get('type') in ['joined', 'echo']:
+                    if args.debug:
+                        print(f"[WebSocket] Handshake confirmed: {data.get('type')}")
+                    return True
+                    
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                if args.debug:
+                    print(f"[WebSocket] Handshake error: {e}")
+                return False
+        
+        print("[WebSocket] Handshake timeout - no confirmation received")
+        return False
+    
     # Connect to WebSocket server
     try:
         print(f"Connecting to {ws_url}...")
@@ -282,27 +323,11 @@ Examples:
             ping_timeout=None    # Use application-level keepalive instead
         )
         
-        # Send join message (register with room)
-        join_msg = {
-            'type': 'join',
-            'roomId': 'main',  # Default room
-            'callsign': args.callsign,
-            'muteMyCallsign': True  # Mute own audio on web page (sidetone only in Python)
-        }
-        await ws.send(json.dumps(join_msg))
-        print(f"Sent join request as {args.callsign}...")
+        # Send handshake
+        if not await send_handshake():
+            raise Exception("Handshake failed - no confirmation from server")
         
-        # Wait for join confirmation
-        response = await asyncio.wait_for(ws.recv(), timeout=5.0)
-        data = json.loads(response)
-        
-        if data.get('type') == 'joined':
-            print(f"✓ Connected as {args.callsign} in room 'main'")
-        elif data.get('type') == 'echo':
-            print(f"✓ Connected in echo mode (single-user testing)")
-        else:
-            print(f"⚠ Unexpected response: {data.get('type')}")
-            print(f"  Proceeding anyway...")
+        print(f"✓ Connected as {args.callsign} in room 'main'")
         
     except asyncio.TimeoutError:
         print(f"✗ Connection timeout - no response from server")
@@ -406,37 +431,30 @@ Examples:
                     
                     # Reconnect
                     ws = await websockets.connect(ws_url, ping_interval=None, ping_timeout=None)
+                    print(f"[WebSocket] ✓ Reconnected to {ws_url}")
                     
-                    # Re-join room
-                    join_msg = {
-                        'type': 'join',
-                        'roomId': 'main',
-                        'callsign': args.callsign,
-                        'muteMyCallsign': True  # Mute own audio on web page
-                    }
-                    await ws.send(json.dumps(join_msg))
+                    # Re-send handshake (CRITICAL FIX)
+                    if not await send_handshake():
+                        raise Exception("Handshake failed after reconnection")
                     
-                    # Wait for confirmation
-                    response = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                    data = json.loads(response)
+                    print(f"[WebSocket] ✓ Handshake complete")
                     
-                    if data.get('type') in ['joined', 'echo']:
-                        print(f"[WebSocket] ✓ Reconnected to {ws_url}")
-                        
-                        # Restart keepalive and receive tasks
-                        connected = True
-                        keepalive_task = asyncio.create_task(keepalive_loop())
-                        receive_task = asyncio.create_task(receive_loop())
-                        
-                        # Try to send the original message
-                        try:
-                            await ws.send(json.dumps(message_dict))
-                            return True
-                        except Exception as send_err:
-                            print(f"[WebSocket] Send after reconnection failed: {send_err}")
-                            continue
-                    else:
-                        raise Exception(f"Unexpected response: {data.get('type')}")
+                    # Restart keepalive and receive tasks
+                    connected = True
+                    if keepalive_task:
+                        keepalive_task.cancel()
+                    if receive_task:
+                        receive_task.cancel()
+                    keepalive_task = asyncio.create_task(keepalive_loop())
+                    receive_task = asyncio.create_task(receive_loop())
+                    
+                    # Try to send the original message
+                    try:
+                        await ws.send(json.dumps(message_dict))
+                        return True
+                    except Exception as send_err:
+                        print(f"[WebSocket] Send after reconnection failed: {send_err}")
+                        continue
                         
                 except Exception as reconnect_err:
                     if attempt < max_reconnect_attempts - 1:
