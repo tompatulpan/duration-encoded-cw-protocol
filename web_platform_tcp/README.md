@@ -118,6 +118,58 @@ This is an **experimental browser-based implementation**. Multi-user support cur
                 └────────────────────────┘
 ```
 
+**Pythom-to-Browser Flow**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Python Sender (cw_usb_key_sender_web.py)                    │
+│                                                              │
+│ Key press → timestamp_ms = 48 (since transmission_start)    │
+│             duration_ms = 48 (previous UP state)            │
+│             key_down = False (transition TO UP)             │
+└────────────────┬────────────────────────────────────────────┘
+                 │ WebSocket (binary packet)
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Cloudflare Worker (worker/index.js)                         │
+│                                                              │
+│ Deserialize binary → Convert to JSON → Broadcast to browsers│
+└────────────────┬────────────────────────────────────────────┘
+                 │ WebSocket (JSON)
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Browser (app.js)                                             │
+│                                                              │
+│ Parse JSON → Pass to jitter buffer                          │
+└────────────────┬────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Jitter Buffer (jitter-buffer.js)                            │
+│                                                              │
+│ Timeline sync:  now - timestamp_ms = sender_start           │
+│ Calculate:      sender_start + timestamp_ms + buffer_ms     │
+│ Schedule:       playout at absolute time (burst-resistant)  │
+│ Queue:          Sorted priority queue by playout time       │
+└────────────────┬────────────────────────────────────────────┘
+                 │ When playout_time <= now
+                 ▼
+         ┌───────┴────────┐
+         │                 │
+         ▼                 ▼
+┌──────────────────┐  ┌──────────────────┐
+│ Sidetone Gen     │  │ CW Decoder       │
+│                  │  │                  │
+│ Uses: key_down   │  │ Uses: duration   │
+│ Plays: 700Hz     │  │ Ignores: ts      │
+│                  │  │ Decodes: '.-'    │
+└──────────────────┘  └──────────────────┘
+         │                 │
+         ▼                 ▼
+      Audio            Display Text
+    (WebAudio)         (DOM Update)
+```
+
 **Key Design:**
 - Browser → Worker: `{type: 'cw_event', callsign, key_down, duration_ms, timestamp_ms}`
 - Worker → Browsers: Same format (just pass through and broadcast)
