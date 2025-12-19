@@ -622,7 +622,9 @@ async function sendElement(duration) {
 async function sendText(text) {
   if (DEBUG) console.log('[Room] Sending text:', text);
   
-  const words = text.toUpperCase().split(' ');
+  // Trim and filter empty words
+  const words = text.toUpperCase().trim().split(/\s+/).filter(w => w.length > 0);
+  if (DEBUG) console.log('[Room] Words array:', words);
   let previousSpacing = 0; // Track spacing before each element
   
   for (let wordIdx = 0; wordIdx < words.length; wordIdx++) {
@@ -670,15 +672,23 @@ async function sendText(text) {
         // Wait for element space or letter space
         const isLastElement = (i === pattern.length - 1);
         const space = isLastElement ? (ditMs * 3) : ditMs; // Letter space (3 units) or element space (1 unit)
-        previousSpacing = space; // Update for next element
+        previousSpacing = space;
         await sleep(space);
       }
     }
     
-    // Word space (7 dit units total)
+    // Word space after each word (except the last)
     if (wordIdx < words.length - 1) {
-      previousSpacing = ditMs * 7; // Update spacing for next word's first element
-      await sleep(ditMs * 7);
+      // Word space is 7 units total, but we already slept 3 for letter space
+      // So sleep 4 more units
+      const additionalSpace = ditMs * 4;
+      previousSpacing = ditMs * 3 + additionalSpace; // Track total 7 units for next element
+      if (DEBUG) console.log(`[Room] Word space after "${word}": sleeping ${additionalSpace}ms more (total 7 units)`);
+      await sleep(additionalSpace);
+    } else {
+      // Reset spacing after last word (no trailing space)
+      previousSpacing = 0;
+      if (DEBUG) console.log(`[Room] Last word "${word}" - no trailing space`);
     }
   }
   
