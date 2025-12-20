@@ -203,24 +203,30 @@ async def main():
         epilog="""
 Examples:
   Straight key:
-    python3 cw_xiao_sender_web.py --callsign SM5ABC --mode straight
+    python3 cw_xiao_sender_web.py --server wss://cw-relay.workers.dev --callsign SM5ABC --mode straight
     
   Iambic Mode B paddle:
-    python3 cw_xiao_sender_web.py --callsign SM5ABC --mode iambic-b --wpm 25
+    python3 cw_xiao_sender_web.py --server wss://cw-relay.workers.dev --callsign SM5ABC --mode iambic-b --wpm 25
     
-  Custom server:
-    python3 cw_xiao_sender_web.py --url wss://cw.example.com --callsign SM5ABC
+  Join specific room:
+    python3 cw_xiao_sender_web.py --server wss://cw-relay.workers.dev --callsign SM5ABC --room practice
+    
+  Echo mode testing:
+    python3 cw_xiao_sender_web.py --server wss://cw-relay.workers.dev --callsign TEST --echo
         """
     )
     
-    parser.add_argument('--url', default='ws://localhost:8787',
+    parser.add_argument('--server', default='ws://localhost:8787',
                        help='WebSocket server URL (default: ws://localhost:8787)')
     parser.add_argument('--callsign', required=True, help='Your amateur radio callsign')
+    parser.add_argument('--room', default='main',
+                       help='Room ID (default: main)')
     parser.add_argument('--mode', choices=['straight', 'iambic-a', 'iambic-b'], 
                        default='iambic-b', help='Keying mode (default: iambic-b)')
     parser.add_argument('--wpm', type=int, default=20, help='Keyer speed in WPM (default: 20)')
     parser.add_argument('--device', help='Explicit /dev/hidraw* device path')
-    parser.add_argument('--no-audio', action='store_true', help='Disable sidetone')
+    parser.add_argument('--no-sidetone', action='store_true', help='Disable sidetone audio')
+    parser.add_argument('--echo', action='store_true', help='Enable echo mode (receive back your events for testing)')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     
     args = parser.parse_args()
@@ -233,8 +239,8 @@ Examples:
     # Normalize URL - strip any protocol and re-add based on input
     # If user provided http:// use ws://, if https:// use wss://
     # If no protocol, default to ws:// for localhost, wss:// for others
-    original_url = args.url
-    server_url = args.url.replace('wss://', '').replace('ws://', '').replace('https://', '').replace('http://', '')
+    original_url = args.server
+    server_url = args.server.replace('wss://', '').replace('ws://', '').replace('https://', '').replace('http://', '')
     
     # Determine protocol based on original input or hostname
     if original_url.startswith('http://') or original_url.startswith('ws://'):
@@ -251,8 +257,11 @@ Examples:
     print("CW XIAO Sender with WebSocket Protocol")
     print("=" * 70)
     print(f"Callsign: {args.callsign}")
+    print(f"Room: {args.room}")
     print(f"Mode: {args.mode.upper()}")
     print(f"Server: {ws_url}")
+    if args.echo:
+        print("Echo mode: Enabled (will receive own events)")
     print("-" * 70)
     
     # Initialize HID reader
@@ -269,7 +278,7 @@ Examples:
     
     # Initialize sidetone
     sidetone = None
-    if not args.no_audio:
+    if not args.no_sidetone:
         sidetone = SidetoneGenerator(frequency=600)  # TX frequency
     
     # WebSocket connection variable
@@ -282,9 +291,9 @@ Examples:
         
         join_msg = {
             'type': 'join',
-            'roomId': 'main',
+            'roomId': args.room,
             'callsign': args.callsign,
-            'muteMyCallsign': True
+            'muteMyCallsign': not args.echo  # Don't mute if echo mode enabled
         }
         
         if args.debug:
@@ -338,7 +347,10 @@ Examples:
         if not await send_handshake():
             raise Exception("Handshake failed - no confirmation from server")
         
-        print(f"✓ Connected as {args.callsign} in room 'main'")
+        if args.echo:
+            print(f"✓ Connected in echo mode (will receive own events)")
+        else:
+            print(f"✓ Connected as {args.callsign} in room '{args.room}'")
         
     except asyncio.TimeoutError:
         print(f"✗ Connection timeout - no response from server")
