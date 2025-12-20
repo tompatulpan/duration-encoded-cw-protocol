@@ -64,6 +64,7 @@ class CWGPIOOutputTCPTimestamp:
         
         # Initialize GPIO keyer
         print(f"[GPIO] Initializing BCM pin {gpio_pin} ({'active-high' if active_high else 'active-low'})")
+        print(f"[GPIO] Key-down will be: {'HIGH' if active_high else 'LOW'}")
         self.gpio = GPIOKeyer(pin=gpio_pin, active_high=active_high)
         
         # Initialize jitter buffer
@@ -83,24 +84,18 @@ class CWGPIOOutputTCPTimestamp:
         
         Args:
             key_down: True for key-down, False for key-up
-            duration_ms: Duration of this state in milliseconds
+            duration_ms: Duration in milliseconds (informational only)
+        
+        Note: Unlike audio which is continuous, GPIO is a discrete state.
+        The jitter buffer will call this callback again with the opposite
+        state at the correct time - no timer needed!
         """
-        # Set GPIO state immediately
-        self.gpio.set_key_state(key_down)
-        
         if self.debug:
-            print(f"[GPIO] {'DOWN' if key_down else 'UP'} for {duration_ms}ms")
+            print(f"[GPIO] {'KEY DOWN' if key_down else 'KEY UP  '} for {duration_ms}ms (setting GPIO to {key_down})")
         
-        # If key down, schedule automatic key-up after duration
-        if key_down:
-            def release_key():
-                self.gpio.set_key_state(False)
-                if self.debug:
-                    print(f"[GPIO] Auto-release after {duration_ms}ms")
-            
-            timer = threading.Timer(duration_ms / 1000.0, release_key)
-            timer.daemon = True
-            timer.start()
+        # Simply set GPIO to new state
+        # The jitter buffer ensures the next event arrives at the right time
+        self.gpio.set_key_state(key_down)
     
     def run(self):
         """
