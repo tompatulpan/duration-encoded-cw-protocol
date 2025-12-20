@@ -70,8 +70,7 @@ class CWGPIOOutputTCPTimestamp:
         print(f"[BUFFER] Jitter buffer: {jitter_buffer_ms}ms")
         self.jitter_buffer = JitterBuffer(buffer_ms=jitter_buffer_ms)
         self.jitter_buffer.debug = debug
-        self.jitter_buffer.set_callback(self._on_cw_event)
-        self.jitter_buffer.start()
+        self.jitter_buffer.start(self._on_cw_event)
         
         # Connection state
         self.sender_timeline_offset = None
