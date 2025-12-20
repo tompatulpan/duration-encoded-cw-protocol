@@ -278,6 +278,8 @@ Examples:
     # Helper: Send join handshake and wait for confirmation
     async def send_handshake():
         """Send join message and wait for confirmation"""
+        nonlocal last_event_time, session_start
+        
         join_msg = {
             'type': 'join',
             'roomId': 'main',
@@ -301,6 +303,15 @@ Examples:
                 if data.get('type') in ['joined', 'echo']:
                     if args.debug:
                         print(f"[WebSocket] Handshake confirmed: {data.get('type')}")
+                    
+                    # Reset timing state after successful handshake (prevents huge gaps)
+                    now = time.time()
+                    session_start = now
+                    last_event_time = now
+                    
+                    if args.debug:
+                        print(f"[WebSocket] Timing state reset")
+                    
                     return True
                     
             except asyncio.TimeoutError:
@@ -413,6 +424,13 @@ Examples:
         
         max_reconnect_attempts = 5
         reconnect_delay = 2.0
+        
+        # Validate duration before sending (prevent protocol overflow)
+        duration_ms = message_dict.get('duration_ms', 0)
+        if duration_ms > 65535:
+            if args.debug:
+                print(f"[WebSocket] ⚠ Duration {duration_ms}ms exceeds max (65535ms), clamping")
+            message_dict['duration_ms'] = 65535
         
         # First, try to send
         try:

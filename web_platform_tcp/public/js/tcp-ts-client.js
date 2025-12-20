@@ -16,12 +16,19 @@ class TCPTSClient {
     this.sequence = 0;
     this.transmissionStart = null;
     this.keepaliveInterval = null;
+    this.heartbeatTimeout = null;
+    this.reconnectAttempt = 0;
+    this.maxReconnectAttempts = 10;
+    this.reconnectDelay = 1000; // Start with 1s
+    this.intentionalClose = false;
+    this.lastActivityTime = Date.now();
     
     // Statistics
     this.stats = {
       eventsSent: 0,
       eventsReceived: 0,
-      reconnects: 0
+      reconnects: 0,
+      connectionDrops: 0
     };
     
     // Callbacks
@@ -31,6 +38,7 @@ class TCPTSClient {
     this.onPeerLeft = null;
     this.onCwEvent = null;
     this.onError = null;
+    this.onReconnecting = null;
   }
   
   /**
@@ -47,17 +55,11 @@ class TCPTSClient {
         
         this.ws.onopen = () => {
           console.log('[TCP-TS] WebSocket connected');
+          this.reconnectAttempt = 0; // Reset on successful connection
+          this.lastActivityTime = Date.now();
           
-          // Start keepalive (every 30 seconds, well below Cloudflare's 100s timeout)
-          this.keepaliveInterval = setInterval(() => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-              this.send({
-                type: 'keepalive',
-                timestamp: Date.now()
-              });
-              console.log('[TCP-TS] Keepalive sent');
-            }
-          }, 30000); // 30 seconds
+          // Start heartbeat (sends ping, expects pong within timeout)
+          this.startHeartbeat();
           
           // Join room
           this.send({
@@ -79,11 +81,19 @@ class TCPTSClient {
           reject(error);
         };
         
-        this.ws.onclose = () => {
-          console.log('[TCP-TS] WebSocket closed');
+        this.ws.onclose = (event) => {
+          console.log('[TCP-TS] WebSocket closed:', event.code, event.reason);
           this.connected = false;
+          this.clearHeartbeat();
+          
           if (this.onDisconnected) {
             this.onDisconnected();
+          }
+          
+          // Auto-reconnect if not intentional close
+          if (!this.intentionalClose && event.code !== 1000) {
+            this.stats.connectionDrops++;
+            this.scheduleReconnect();
           }
         };
         
@@ -108,6 +118,9 @@ class TCPTSClient {
    * Handle incoming message
    */
   handleMessage(data) {
+    this.lastActivityTime = Date.now();
+    this.resetHeartbeatTimeout();
+    
     switch (data.type) {
       case 'joined':
         console.log('[TCP-TS] Joined room:', data.roomId, 'Peer ID:', data.peerId);
@@ -195,14 +208,96 @@ class TCPTSClient {
   }
   
   /**
-   * Disconnect
+   * Start heartbeat monitoring
    */
-  disconnect() {
-    // Clear keepalive interval
+  startHeartbeat() {
+    // Send ping every 30s (well below Cloudflare's 100s idle timeout)
+    this.keepaliveInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.send({
+          type: 'keepalive',
+          timestamp: Date.now()
+        });
+        
+        // Set timeout to detect dead connection
+        this.heartbeatTimeout = setTimeout(() => {
+          console.warn('[TCP-TS] Heartbeat timeout - connection appears dead');
+          this.stats.connectionDrops++;
+          if (this.ws) {
+            this.ws.close();
+          }
+        }, 10000); // 10s timeout for response
+        
+        if (window.DEBUG) console.log('[TCP-TS] Heartbeat ping sent');
+      }
+    }, 30000); // 30 seconds
+  }
+  
+  /**
+   * Reset heartbeat timeout (called on any message received)
+   */
+  resetHeartbeatTimeout() {
+    if (this.heartbeatTimeout) {
+      clearTimeout(this.heartbeatTimeout);
+      this.heartbeatTimeout = null;
+    }
+  }
+  
+  /**
+   * Clear heartbeat timers
+   */
+  clearHeartbeat() {
     if (this.keepaliveInterval) {
       clearInterval(this.keepaliveInterval);
       this.keepaliveInterval = null;
     }
+    this.resetHeartbeatTimeout();
+  }
+  
+  /**
+   * Schedule reconnection attempt
+   */
+  scheduleReconnect() {
+    if (this.reconnectAttempt >= this.maxReconnectAttempts) {
+      console.error('[TCP-TS] Max reconnect attempts reached');
+      if (this.onError) {
+        this.onError(new Error('Failed to reconnect after ' + this.maxReconnectAttempts + ' attempts'));
+      }
+      return;
+    }
+    
+    this.reconnectAttempt++;
+    const delay = Math.min(this.reconnectDelay * this.reconnectAttempt, 30000);
+    
+    console.log(`[TCP-TS] Reconnecting in ${delay/1000}s (attempt ${this.reconnectAttempt}/${this.maxReconnectAttempts})`);
+    
+    if (this.onReconnecting) {
+      this.onReconnecting({ attempt: this.reconnectAttempt, delay: delay });
+    }
+    
+    setTimeout(() => {
+      console.log('[TCP-TS] Attempting to reconnect...');
+      this.stats.reconnects++;
+      this.connect(this.roomId, this.callsign)
+        .then(() => {
+          console.log('[TCP-TS] ✓ Reconnected successfully');
+        })
+        .catch((err) => {
+          console.error('[TCP-TS] Reconnection failed:', err);
+          // Will trigger onclose handler which schedules next attempt
+        });
+    }, delay);
+  }
+  
+  /**
+   * Disconnect
+   */
+  disconnect() {
+    this.intentionalClose = true;
+    this.intentionalClose = true;
+    
+    // Clear all timers
+    this.clearHeartbeat();
     
     if (this.ws) {
       this.send({ type: 'leave' });
