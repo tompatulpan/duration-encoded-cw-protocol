@@ -188,7 +188,6 @@ testing/
 # Web platform - Node.js and development files
 node_modules/
 .wrangler/
-worker/
 package-lock.json
 .dev.vars
 web_platform/dist/

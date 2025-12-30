@@ -190,7 +190,7 @@ UDP is preferred for low-latency applications:
 
 For connecting real CW keys/paddles to your computer, see the **[`USB_HID/`](../USB_HID/)** directory containing a complete hardware solution.
 
-### XIAO SAMD21 Solution (Production Ready) ✅
+### XIAO SAMD21 Solution
 
 **Hardware:**
 - Seeedstudio XIAO SAMD21 microcontroller ($5)

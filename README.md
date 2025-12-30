@@ -237,9 +237,9 @@ Complete technical documentation is in the implementation directories:
 - ✅ TCP variants (duration-based and timestamp-based)
 - ✅ Jitter buffer with word space detection
 - ✅ Hardware key support (USB serial)
-- ✅ USB HID paddle interface (XIAO SAMD21, production ready)
-- ✅ Iambic keyer (Mode A/B)
-- ✅ Audio sidetone (TX and RX)
+- ✅ USB HID paddle interface
+- ✅ Iambic keyer
+- ✅ Audio sidetone
 - ✅ GPIO output (Raspberry Pi)
 - ✅ Real-time CW decoder
 - ✅ Web platform (experimental)
@@ -256,6 +256,7 @@ Complete technical documentation is in the implementation directories:
 Inspired by:
 - Protocol concept: Wolfgang Buescher (DL4YHF)
 - Iambic keyer reference: Steve Haynal (n1gp/iambic-keyer)
+- USB HID inspired by the Vail-CW adapter project - https://github.com/Vail-CW
 - Ideas and testing: Stu (KZ4LN)
 - Testing: Fabian Kurz (DJ5CW/SO5CW)
 
