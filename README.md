@@ -134,20 +134,16 @@ See [web_platform_tcp/README.md](web_platform_tcp/README.md) for web platform de
 ---
 
 ## Hardware Setup
+### Serial or USB-interface alternatives
 
-### USB HID Physical Key Interface (XIAO SAMD21) ✅
+### USB HID Physical Key Interface
 
 **NEW:** Complete working solution for connecting physical CW keys via USB!
 
 The **[`USB_HID/`](USB_HID/)** directory contains a production-ready hardware interface:
 
-- **Seeedstudio XIAO SAMD21** microcontroller ($5)
+- **Seeedstudio XIAO SAMD21** microcontroller
 - **USB HID Keyboard protocol** (works on Linux/Windows/macOS)
-- **Iambic-B keyer** with paddle memory
-- **Straight key mode**
-- **TCP timestamp protocol**
-- **Real-time sidetone** with LED feedback
-
 **Quick Start:**
 ```bash
 # 1. Upload firmware (Arduino IDE)
@@ -178,9 +174,14 @@ DB-9 or USB-TTL adapter:
 ├─ Pin 6 (DSR) ──→ Dah paddle
 └─ Pin 5 (GND) ──→ Common ground
 ```
-
 For straight key: Connect key between CTS and GND  
 For iambic: Connect dit paddle to CTS, dah paddle to DSR
+
+### Interfaces features together with the Sender-software
+- **Iambic-keyer**
+- **Straight key mode**
+- **TCP timestamp protocol**
+- **Real-time sidetone**
 
 ### Raspberry Pi GPIO Output
 
@@ -263,4 +264,4 @@ Inspired by:
 ---
 
 **Happy CW operating!**  
-73 de SM0ONR 📻
+73 de SM0ONR
