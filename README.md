@@ -168,11 +168,10 @@ python3 cw_receiver_tcp_ts.py --jitter-buffer 150
 
 **See [USB_HID/README.md](USB_HID/README.md) for complete setup guide, troubleshooting, and technical details.**
 
-### Vail adapter
+### Vail adapter hardware
 See this - https://vailadapter.com/
-Or build one your self - https://github.com/Vail-CW/vail-adapter
 
-**Note** Will require the same set up as the HID interface.
+**Note** Will require the same firmware as the HID interface.
 
 ### USB Serial Adapter for Physical Keys
 
