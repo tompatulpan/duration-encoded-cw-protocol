@@ -134,11 +134,14 @@ See [web_platform_tcp/README.md](web_platform_tcp/README.md) for web platform de
 ---
 
 ## Hardware Setup
+Here we have a coupleof options.
+
 ### Serial or USB-interface alternatives
+- USB HID interface
+- USB HID (Vail adapter)
+- Serial Interface
 
 ### USB HID Physical Key Interface
-
-**NEW:** Complete working solution for connecting physical CW keys via USB!
 
 The **[`USB_HID/`](USB_HID/)** directory contains a production-ready hardware interface:
 
@@ -165,6 +168,12 @@ python3 cw_receiver_tcp_ts.py --jitter-buffer 150
 
 **See [USB_HID/README.md](USB_HID/README.md) for complete setup guide, troubleshooting, and technical details.**
 
+### Vail adapter
+See this - https://vailadapter.com/
+Or build one your self - https://github.com/Vail-CW/vail-adapter
+
+**Note** Will require the same set up as the HID interface.
+
 ### USB Serial Adapter for Physical Keys
 
 **Pin assignments:**
@@ -180,7 +189,6 @@ For iambic: Connect dit paddle to CTS, dah paddle to DSR
 ### Interfaces features together with the Sender-software
 - **Iambic-keyer**
 - **Straight key mode**
-- **TCP timestamp protocol**
 - **Real-time sidetone**
 
 ### Raspberry Pi GPIO Output
@@ -201,6 +209,8 @@ python3 cw_gpio_output.py --pin 23 --buffer 150
 **Hardware connection:** GPIO Pin → Relay/Transistor → Transmitter Key Input
 
 See [test_implementation/README.md](test_implementation/README.md) for complete hardware setup details.
+
+**Note** Serial interfaces can behave porly depending on supported sampling speed!
 
 ---
 
