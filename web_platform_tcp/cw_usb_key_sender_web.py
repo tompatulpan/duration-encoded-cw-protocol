@@ -362,6 +362,55 @@ class USBKeyWebSender:
                     print("\n✗ Cancelled")
                     sys.exit(1)
     
+    async def send_handshake(self):
+        """Send join handshake and wait for confirmation"""
+        join_msg = {
+            'type': 'join',
+            'roomId': self.room_id,
+            'callsign': self.callsign
+        }
+        
+        if self.debug:
+            print(f"[WebSocket] Sending join: {join_msg}")
+        
+        await self.ws.send(json.dumps(join_msg))
+        
+        # Wait for confirmation
+        timeout = 5.0
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                msg = await asyncio.wait_for(self.ws.recv(), timeout=0.1)
+                data = json.loads(msg)
+                
+                if data.get('type') in ['joined', 'echo']:
+                    if self.debug:
+                        print(f"[WebSocket] Handshake confirmed: {data.get('type')}")
+                    
+                    # Reset timing state after successful handshake (prevents huge gaps)
+                    now = time.time()
+                    self.transmission_start = now
+                    self.last_transition_time = now
+                    
+                    if self.debug:
+                        print(f"[WebSocket] Timing state reset")
+                    
+                    # Set echo mode flag
+                    if data.get('type') == 'echo':
+                        self.echo_mode = True
+                    
+                    return True
+                    
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                if self.debug:
+                    print(f"[WebSocket] Handshake error: {e}")
+                return False
+        
+        print("[WebSocket] Handshake timeout - no confirmation received")
+        return False
+    
     async def connect(self, max_retries=5):
         """Connect to WebSocket server with retry logic"""
         for attempt in range(max_retries):
@@ -375,30 +424,20 @@ class USBKeyWebSender:
                     ping_timeout=None    # Disable ping timeout
                 )
                 
-                # Send join message
-                join_msg = {
-                    'type': 'join',
-                    'roomId': self.room_id,
-                    'callsign': self.callsign
-                }
-                await self.ws.send(json.dumps(join_msg))
+                # Send handshake
+                if not await self.send_handshake():
+                    raise Exception("Handshake failed - no confirmation from server")
                 
-                # Wait for join confirmation
-                response = await asyncio.wait_for(self.ws.recv(), timeout=5.0)
-                data = json.loads(response)
+                # Set connected state
+                self.connected = True
+                self.start_time = time.time()
                 
-                if data.get('type') == 'joined':
-                    print(f"✓ Connected as {self.callsign} in room '{self.room_id}'")
-                    self.connected = True
-                    self.start_time = time.time()
-                    return True
-                elif data.get('type') == 'echo':
-                    # Echo mode - no room support
+                if self.echo_mode:
                     print(f"✓ Connected in echo mode (single-user testing)")
-                    self.connected = True
-                    self.echo_mode = True
-                    self.start_time = time.time()
-                    return True
+                else:
+                    print(f"✓ Connected as {self.callsign} in room '{self.room_id}'")
+                
+                return True
                     
             except asyncio.TimeoutError:
                 print(f"✗ Connection timeout")
@@ -412,6 +451,77 @@ class USBKeyWebSender:
         
         print("✗ Failed to connect after {} attempts".format(max_retries))
         return False
+    
+    async def ws_send_with_reconnect(self, message_dict):
+        """Send WebSocket message with automatic reconnection on failure"""
+        max_reconnect_attempts = 5
+        reconnect_delay = 2.0
+        
+        # Validate duration before sending (prevent protocol overflow)
+        if 'duration_ms' in message_dict:
+            duration_ms = message_dict['duration_ms']
+            if duration_ms > 65535:
+                if self.debug:
+                    print(f"[WebSocket] ⚠ Duration {duration_ms}ms exceeds max (65535ms), clamping")
+                message_dict['duration_ms'] = 65535
+        
+        # First, try to send
+        try:
+            await self.ws.send(json.dumps(message_dict))
+            return True
+        except (websockets.exceptions.ConnectionClosed,
+                websockets.exceptions.WebSocketException,
+                Exception) as e:
+            print(f"\n[WebSocket] Connection lost: {e}")
+            print(f"[WebSocket] Attempting to reconnect...")
+            
+            # Try to reconnect with multiple attempts
+            for attempt in range(max_reconnect_attempts):
+                try:
+                    await asyncio.sleep(reconnect_delay)
+                    
+                    # Reconnect
+                    self.ws = await websockets.connect(
+                        self.server_url,
+                        ping_interval=None,
+                        ping_timeout=None
+                    )
+                    print(f"[WebSocket] ✓ Reconnected to {self.server_url}")
+                    
+                    # Re-send handshake (CRITICAL FIX)
+                    if not await self.send_handshake():
+                        raise Exception("Handshake failed after reconnection")
+                    
+                    print(f"[WebSocket] ✓ Handshake complete")
+                    
+                    # Mark as connected
+                    self.connected = True
+                    
+                    # Clear pending events queue (stale timestamps)
+                    if self.pending_events:
+                        dropped = len(self.pending_events)
+                        self.pending_events.clear()
+                        if self.debug:
+                            print(f"[WebSocket] Dropped {dropped} stale events from queue")
+                    
+                    # Try to send the original message
+                    try:
+                        await self.ws.send(json.dumps(message_dict))
+                        return True
+                    except Exception as send_err:
+                        print(f"[WebSocket] Send after reconnection failed: {send_err}")
+                        continue
+                        
+                except Exception as reconnect_err:
+                    if attempt < max_reconnect_attempts - 1:
+                        print(f"[WebSocket] Reconnection attempt {attempt + 1}/{max_reconnect_attempts} failed, retrying...")
+                    else:
+                        print(f"[WebSocket] ✗ Could not reconnect after {max_reconnect_attempts} attempts")
+                        print(f"[WebSocket] Continuing without connection (packets will be dropped)")
+                        self.connected = False
+                        return False
+            
+            return False
     
     async def keepalive_loop(self):
         """Send keepalive messages every 15 seconds (Cloudflare Workers requirement)"""
@@ -440,7 +550,12 @@ class USBKeyWebSender:
                 
                 msg_type = data.get('type')
                 
-                if msg_type == 'keepalive_ack':
+                if msg_type == 'server_ping':
+                    # Server heartbeat - acknowledge to prevent idle timeout
+                    if self.debug:
+                        print("[DEBUG] Server ping received")
+                
+                elif msg_type == 'keepalive_ack':
                     # Keepalive acknowledged (two-way communication)
                     if self.debug:
                         print("[DEBUG] Keepalive acknowledged")
@@ -463,9 +578,44 @@ class USBKeyWebSender:
                         print(f"[DEBUG] {msg_type}: {data}")
                     
             except websockets.exceptions.ConnectionClosed:
-                print("\n✗ Connection closed")
+                print("\n✗ Connection closed by server")
                 self.connected = False
-                break
+                
+                # Attempt to reconnect
+                print("[WebSocket] Attempting to reconnect...")
+                try:
+                    await asyncio.sleep(2.0)
+                    
+                    # Reconnect
+                    self.ws = await websockets.connect(
+                        self.server_url,
+                        ping_interval=None,
+                        ping_timeout=None
+                    )
+                    print(f"[WebSocket] ✓ Reconnected to {self.server_url}")
+                    
+                    # Re-send handshake
+                    if await self.send_handshake():
+                        print(f"[WebSocket] ✓ Handshake complete, resuming...")
+                        self.connected = True
+                        
+                        # Clear pending events queue (stale timestamps)
+                        if self.pending_events:
+                            dropped = len(self.pending_events)
+                            self.pending_events.clear()
+                            if self.debug:
+                                print(f"[WebSocket] Dropped {dropped} stale events from queue")
+                        
+                        # Continue receive loop
+                        continue
+                    else:
+                        print(f"[WebSocket] ✗ Handshake failed after reconnection")
+                        break
+                        
+                except Exception as reconnect_err:
+                    print(f"[WebSocket] ✗ Reconnection failed: {reconnect_err}")
+                    break
+                    
             except Exception as e:
                 if self.debug:
                     print(f"\n[DEBUG] Receive error: {e}")
@@ -525,20 +675,33 @@ class USBKeyWebSender:
             print("▀", end='', flush=True)
     
     async def send_queued_events(self):
-        """Send queued events asynchronously"""
-        while self.pending_events:
+        """Send queued events asynchronously with automatic reconnection and rate limiting"""
+        # Rate limit: send max 5 events per call to avoid bursting
+        # At 25 WPM, rapid dits = ~10 events/sec (DOWN+UP per dit) 
+        # Sending 5 events every 1ms = smooth ~200 events/sec capacity
+        max_events_per_call = 5
+        events_sent_this_call = 0
+        
+        while self.pending_events and events_sent_this_call < max_events_per_call:
             event = self.pending_events.pop(0)
-            try:
-                await self.ws.send(json.dumps(event))
-                self.events_sent += 1
-                
+            
+            if not await self.ws_send_with_reconnect(event):
+                # Failed to send even after reconnection attempts
                 if self.debug:
-                    print(f"\n[SEND] {event['key_down']} dur={event['duration_ms']}ms ts={event['timestamp_ms']}ms")
-                    
-            except Exception as e:
-                print(f"\n✗ Send failed: {e}")
-                self.connected = False
-                break
+                    print(f"\n[DEBUG] Event dropped: {event}")
+                # Don't break - keep trying next events
+                continue
+            
+            self.events_sent += 1
+            events_sent_this_call += 1
+            
+            if self.debug:
+                print(f"\n[SEND] {event['key_down']} dur={event['duration_ms']}ms ts={event['timestamp_ms']}ms")
+        
+        # If queue is backing up, warn user
+        if len(self.pending_events) > 20:
+            if self.debug:
+                print(f"\n[WARNING] Event queue depth: {len(self.pending_events)} (network slow?)")
     
     async def poll_straight_key(self):
         """Poll straight key and send events"""

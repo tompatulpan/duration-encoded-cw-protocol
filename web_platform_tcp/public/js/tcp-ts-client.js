@@ -153,7 +153,7 @@ class TCPTSClient {
         
       case 'keepalive_ack':
         // Keepalive acknowledged by server (two-way communication maintained)
-        console.log('[TCP-TS] Keepalive acknowledged');
+        if (window.DEBUG) console.log('[TCP-TS] Keepalive acknowledged');
         break;
         
       case 'error':

@@ -4,14 +4,14 @@
 
 Hardware solution for connecting CW paddles to the Duration-Encoded CW Protocol over networks and web platform.
 
-## XIAO SAMD21 USB HID Keyer ⭐ **RECOMMENDED**
+## XIAO SAMD21 USB HID Keyer
 
 A compact USB HID device that appears as a keyboard to the host PC. The microcontroller reads paddle inputs and presents them as USB keyboard key presses, which Python software reads and transmits over TCP-TS.
 
 ## Quick Start
 
-1. **Flash firmware** to XIAO SAMD21 (see HARDWARE.md)
-2. **Connect paddles** to D1 (dah) and D2 (dit), common to GND
+1. **Flash firmware** to XIAO SAMD21
+2. **Connect paddles** 
 3. **Install dependencies:** `pip3 install pyaudio numpy websockets`
 4. **Run sender:**
    - LAN: `python3 cw_xiao_sender_tcp_ts.py <receiver_ip>`
@@ -27,18 +27,18 @@ A compact USB HID device that appears as a keyboard to the host PC. The microcon
 
 ### Architecture
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   XIAO SAMD21                               │
-│                                                             │
+┌───────────────────────────────────────────────────────────┐
+│                   XIAO SAMD21                             │
+│                                                           │
 │  ┌────────────┐    ┌──────────────┐   ┌─────────────┐     │
 │  │   GPIO     │ →  │   Firmware   │ → │  USB HID    │     │
 │  │  Inputs    │    │  (Arduino)   │   │  Keyboard   │     │
 │  │  (2 pins)  │    │  Keyboard    │   │             │     │
 │  └────────────┘    │  library     │   └─────────────┘     │
 │       ↑            └──────────────┘          ↓            │
-│  Dit/Dah paddles                        USB cable          │
-│                                                ↓            │
-└─────────────────────────────────────────────────────────────┘
+│  Dit/Dah paddles                        USB cable         │
+│                                                ↓          │
+└───────────────────────────────────────────────────────────┘
                                                  ↓
                                    ┌────────────────────────┐
                                    │  Host PC (Linux/Win)   │
@@ -80,13 +80,18 @@ Paddle Wiring:
 
 ### Firmware (Arduino)
 
-**File:** `xiao_samd21_hid_key/xiao_samd21_hid_key.ino`
+### Use the binary
+- Dowwnload the binary [here](https://github.com/tompatulpan/duration-encoded-cw-protocol/tree/main/USB_HID/xiao_samd21_hid_key/bin)
+- Use the binary file, but with this tool - https://update.vailadapter.com/
+- Or this method - https://www.youtube.com/watch?v=IgOdkUe5SMY
 
 **Key features:**
 - Uses Arduino `Keyboard.h` library (NOT custom HID descriptors)
 - Sends `KEY_LEFT_CTRL` (dit) and `KEY_RIGHT_CTRL` (dah)
 - Appears as standard USB HID keyboard device
 - Comprehensive Serial debug output (115200 baud)
+
+### Compile and upload on Arduino IDE
 
 **Upload instructions:**
 1. Install Arduino IDE 2.x
@@ -100,6 +105,8 @@ Paddle Wiring:
 - Serial output available at `/dev/ttyACM0` (115200 baud)
 - Shows heartbeat, button events, key press/release
 - Close Arduino Serial Monitor before reading in terminal
+
+---
 
 ### Python Senders (Host PC)
 
@@ -249,6 +256,8 @@ python3 cw_xiao_sender_tcp_ts.py localhost --debug
 | **Multi-user practice** | `cw_xiao_sender_web.py` | Room-based sharing via web platform |
 | **Local practice** | `cw_xiao_sender_tcp_ts.py` | Simpler, no internet required |
 | **Demo/public display** | `cw_xiao_sender_web.py` | Share link, anyone can watch/decode |
+
+---
 
 ### Troubleshooting
 

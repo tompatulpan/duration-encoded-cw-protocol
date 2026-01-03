@@ -39,6 +39,7 @@ let wpm = 20;
 let ditMs = 1200 / wpm;
 let isKeying = false;
 let keyDownTime = 0;
+let audioUnlockPromptShown = false;
 
 // Iambic keyer state (Mode B)
 let ditPressed = false;
@@ -130,6 +131,13 @@ function setupCallbacks() {
   
   client.onCwEvent = (event) => {
     if (DEBUG) console.log('[Room] Received CW event from:', event.callsign, event.key_down ? 'DOWN' : 'UP');
+    
+    // Show audio unlock prompt on first CW event (if not already shown)
+    if (!audioUnlockPromptShown && !audioHandler.audioUnlocked) {
+      showAudioUnlockPrompt();
+      audioUnlockPromptShown = true;
+    }
+    
     // Add to jitter buffer
     jitterBuffer.addEvent(event);
   };
@@ -922,6 +930,79 @@ function generateRandomMixed(groups, charsPerGroup) {
  */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Show audio unlock prompt (browser autoplay policy)
+ */
+function showAudioUnlockPrompt() {
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'audio-unlock-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+  
+  // Create prompt box
+  const promptBox = document.createElement('div');
+  promptBox.style.cssText = `
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 30px 40px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  `;
+  
+  promptBox.innerHTML = `
+    <h2 style="margin: 0 0 15px 0; color: #3498db;">🔊 Enable Audio</h2>
+    <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.5;">
+      CW events detected from <strong>SM5ABC</strong>.<br>
+      Click below to enable audio playback.
+    </p>
+    <button id="enable-audio-btn" style="
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    ">Enable Audio</button>
+  `;
+  
+  overlay.appendChild(promptBox);
+  document.body.appendChild(overlay);
+  
+  // Add button hover effect
+  const btn = document.getElementById('enable-audio-btn');
+  btn.addEventListener('mouseenter', () => {
+    btn.style.background = '#2980b9';
+  });
+  btn.addEventListener('mouseleave', () => {
+    btn.style.background = '#3498db';
+  });
+  
+  // Enable audio on click
+  btn.addEventListener('click', async () => {
+    const success = await audioHandler.resume();
+    if (success) {
+      overlay.remove();
+      console.log('[Room] Audio unlocked by user gesture');
+    }
+  });
 }
 
 // Cleanup on page unload

@@ -13,6 +13,7 @@ class AudioHandler {
     this.enabled = true;
     this.volume = 0.3;
     this.baseFrequency = 700; // Hz
+    this.audioUnlocked = false; // Track if user has enabled audio
     
     this.initAudio();
   }
@@ -40,9 +41,17 @@ class AudioHandler {
    */
   async resume() {
     if (this.audioContext && this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
-      console.log('[Audio] Context resumed');
+      try {
+        await this.audioContext.resume();
+        this.audioUnlocked = true;
+        console.log('[Audio] Context resumed - audio unlocked');
+        return true;
+      } catch (error) {
+        console.error('[Audio] Failed to resume:', error);
+        return false;
+      }
     }
+    return this.audioContext.state === 'running';
   }
   
   /**
@@ -50,14 +59,14 @@ class AudioHandler {
    */
   setKey(callsign, keyDown, frequency = null) {
     if (!this.enabled || !this.audioContext) {
-      return;
+      return false;
     }
     
     if (window.DEBUG) console.log('[Audio] setKey:', callsign, 'keyDown:', keyDown);
     
-    // Resume context if needed
-    if (this.audioContext.state === 'suspended') {
-      this.resume();
+    // Check if audio is unlocked (don't spam resume attempts)
+    if (!this.audioUnlocked) {
+      return false; // Audio not yet unlocked by user gesture
     }
     
     // Get or create oscillator for this user
@@ -72,6 +81,7 @@ class AudioHandler {
     gain.gain.cancelScheduledValues(now);
     gain.gain.setValueAtTime(gain.gain.value, now);
     gain.gain.setTargetAtTime(keyDown ? 1.0 : 0.0, now, 0.004);
+    return true;
   }
   
   /**
