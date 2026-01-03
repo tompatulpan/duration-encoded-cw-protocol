@@ -3,8 +3,14 @@
 Test TCP Timestamp Sender - Using modular protocol structure
 """
 
+import sys
+import os
 import time
 import argparse
+
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from protocol.tcp_ts import CWProtocolTCPTimestamp, TCP_TS_PORT
 from audio.sidetone import SidetoneGenerator
 
