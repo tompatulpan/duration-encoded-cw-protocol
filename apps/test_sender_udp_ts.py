@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test TCP Timestamp Sender - Using modular protocol structure
+Test UDP Timestamp Sender - Using modular protocol structure
 """
 
 import sys
@@ -11,7 +11,7 @@ import argparse
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from protocol.tcp_ts import CWProtocolTCPTimestamp, TCP_TS_PORT
+from protocol.udp_ts import CWProtocolUDPTimestamp, UDP_TS_PORT
 from audio.sidetone import SidetoneGenerator
 
 # Morse code dictionary
@@ -38,7 +38,7 @@ def wpm_to_timing(wpm):
         'word_space': dit_ms * 7
     }
 
-def send_character(protocol, char, timing, sidetone=None):
+def send_character(protocol, dest_addr, char, timing, sidetone=None, debug=False):
     """Send a single character"""
     if char == ' ':
         # Word space (additional delay beyond letter space)
@@ -56,17 +56,33 @@ def send_character(protocol, char, timing, sidetone=None):
         else:  # '-'
             duration = timing['dah']
         
+        # Get timestamp before sending
+        if protocol.transmission_start is None:
+            timestamp_ms = 0
+        else:
+            timestamp_ms = int((time.time() - protocol.transmission_start) * 1000)
+        
         # Send key DOWN event with PREVIOUS state duration (UP/spacing)
         prev_duration = 0 if i == 0 else timing['element_space']
-        protocol.send_packet(True, prev_duration)
+        protocol.send_packet(True, prev_duration, dest_addr)
         if sidetone:
             sidetone.set_key(True)
+        
+        if debug:
+            print(f"[SEND] DOWN {prev_duration}ms (ts={timestamp_ms}ms)")
+        
         time.sleep(duration / 1000.0)
         
+        # Get timestamp for UP event
+        timestamp_ms = int((time.time() - protocol.transmission_start) * 1000)
+        
         # Send key UP event with PREVIOUS state duration (element)
-        protocol.send_packet(False, duration)
+        protocol.send_packet(False, duration, dest_addr)
         if sidetone:
             sidetone.set_key(False)
+        
+        if debug:
+            print(f"[SEND] UP {timing['element_space']}ms (ts={timestamp_ms}ms)")
         
         # Wait element space (unless last element)
         if i < len(pattern) - 1:
@@ -76,13 +92,14 @@ def send_character(protocol, char, timing, sidetone=None):
     time.sleep(timing['letter_space'] / 1000.0)
 
 def main():
-    parser = argparse.ArgumentParser(description='Test TCP+TS CW Sender (modular)')
+    parser = argparse.ArgumentParser(description='Test UDP+TS CW Sender (modular)')
     parser.add_argument('host', help='Receiver hostname/IP')
     parser.add_argument('wpm', type=int, help='Words per minute (15-30)')
     parser.add_argument('message', nargs='?', default='CQ CQ TEST', help='Message to send')
-    parser.add_argument('--port', type=int, default=TCP_TS_PORT, help=f'TCP port (default: {TCP_TS_PORT})')
+    parser.add_argument('--port', type=int, default=UDP_TS_PORT, help=f'UDP port (default: {UDP_TS_PORT})')
     parser.add_argument('--no-sidetone', action='store_true', help='Disable sidetone')
     parser.add_argument('--repeat', type=int, default=1, help='Number of repetitions')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output')
     args = parser.parse_args()
     
     # Validate WPM
@@ -94,64 +111,59 @@ def main():
     timing = wpm_to_timing(args.wpm)
     
     # Create protocol handler
-    protocol = CWProtocolTCPTimestamp(host=args.host, port=args.port)
+    protocol = CWProtocolUDPTimestamp()
+    protocol.create_socket(0)  # Use ephemeral port for sender
+    dest_addr = (args.host, args.port)
     
     # Create sidetone (if enabled)
     sidetone = None
     if not args.no_sidetone:
         try:
-            sidetone = SidetoneGenerator(frequency=600)  # 600 Hz for TX
+            sidetone = SidetoneGenerator(frequency=600)  # TX frequency
             print("[AUDIO] Sidetone enabled at 600 Hz")
         except Exception as e:
             print(f"[AUDIO] Warning: Could not initialize audio: {e}")
-            print("[AUDIO] Continuing without sidetone")
+            print("[AUDIO] Continuing without audio")
     
-    print(f"\n[TEST] TCP Timestamp Sender")
+    print(f"\n[TEST] UDP Timestamp Sender")
     print("[TEST] Using MODULAR protocol structure")
     print(f"[TEST] Target: {args.host}:{args.port}")
     print(f"[TEST] Speed: {args.wpm} WPM")
     print(f"[TEST] Timing: dit={timing['dit']}ms, dah={timing['dah']}ms")
     print(f"[TEST] Message: '{args.message}'")
     print(f"[TEST] Repetitions: {args.repeat}")
-    print("[TEST] Protocol: TCP with timestamps (burst-resistant)")
     print("-" * 60)
+    print()
     
     try:
-        # Connect to receiver
-        print("Connecting...")
-        protocol.connect(timeout=5.0)
-        print(f"[CONNECTED] to {args.host}:{args.port}\n")
-        
         for rep in range(args.repeat):
             if args.repeat > 1:
-                print(f"[{rep+1}/{args.repeat}] Sending: {args.message}")
-            else:
-                print(f"Sending: {args.message}")
+                print(f"\n[REP {rep+1}/{args.repeat}]")
             
-            # Send message
+            print(f"Sending: {args.message}")
+            
+            # Send each character
             for char in args.message:
-                print(char, end='', flush=True)
-                send_character(protocol, char, timing, sidetone)
+                send_character(protocol, dest_addr, char, timing, sidetone, debug=args.debug)
             
-            # Send EOT
-            protocol.send_eot()
+            # Send EOT marker
             print(" [EOT]")
+            protocol.send_eot_packet(dest_addr)
             
-            # Wait between repetitions
+            # Wait for receiver to drain buffer
             if rep < args.repeat - 1:
-                time.sleep(2.0)
+                time.sleep(1.0)
     
     except KeyboardInterrupt:
-        print("\n\n[TEST] Interrupted")
-    except Exception as e:
-        print(f"\n[ERROR] {e}")
-        return 1
+        print("\n\n[TEST] Interrupted by user")
     
     finally:
         # Cleanup
         if sidetone:
             sidetone.close()
         protocol.close()
+        
+        print(f"\n[TEST] Packets sent: {protocol.sequence_number}")
         print("[TEST] Sender stopped")
     
     return 0

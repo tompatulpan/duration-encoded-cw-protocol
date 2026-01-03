@@ -56,13 +56,14 @@ def send_character(protocol, char, timing, sidetone=None):
         else:  # '-'
             duration = timing['dah']
         
-        # Send key DOWN event
-        protocol.send_packet(True, 0 if i == 0 else timing['element_space'])
+        # Send key DOWN event with PREVIOUS state duration (UP/spacing)
+        prev_duration = 0 if i == 0 else timing['element_space']
+        protocol.send_packet(True, prev_duration)
         if sidetone:
             sidetone.set_key(True)
         time.sleep(duration / 1000.0)
         
-        # Send key UP event
+        # Send key UP event with PREVIOUS state duration (element)
         protocol.send_packet(False, duration)
         if sidetone:
             sidetone.set_key(False)

@@ -51,6 +51,12 @@ def main():
     # Playout callback
     def handle_event(key_down, duration_ms):
         """Handle CW event (audio + visual)"""
+        # Protocol: duration = PREVIOUS state duration
+        # Sleep for PREVIOUS state before transitioning
+        if not jitter_buffer and duration_ms > 0:
+            time.sleep(duration_ms / 1000.0)
+        
+        # Now transition to new state
         if sidetone:
             sidetone.set_key(key_down)
         
@@ -61,10 +67,6 @@ def main():
         
         # Track statistics
         stats.add_event(key_down, duration_ms)
-        
-        # For non-buffered mode, simulate the duration
-        if not jitter_buffer:
-            time.sleep(duration_ms / 1000.0)
     
     # Start jitter buffer if enabled
     if jitter_buffer:
@@ -82,6 +84,7 @@ def main():
     last_sequence = -1
     packet_count = 0
     lost_packets = 0
+    last_arrival_time = None
     
     try:
         while True:
@@ -91,6 +94,17 @@ def main():
                 continue
             
             packet_count += 1
+            arrival_time = time.time()
+            
+            # Debug first packet arrival
+            if packet_count == 1 and args.debug:
+                print(f"[DEBUG] First packet received")
+            
+            # Calculate arrival gap
+            arrival_gap_ms = 0
+            if last_arrival_time:
+                arrival_gap_ms = (arrival_time - last_arrival_time) * 1000
+            last_arrival_time = arrival_time
             
             # Check for EOT
             if packet.get('eot'):
@@ -105,6 +119,7 @@ def main():
                         else:
                             print(f"  {key}: {value}")
                 print()
+                last_arrival_time = None  # Reset for next transmission
                 continue
             
             # Track packet loss
@@ -114,18 +129,27 @@ def main():
                 if seq != expected_seq:
                     lost = (seq - expected_seq) % 256
                     lost_packets += lost
-                    print(f"\n[LOSS] {lost} packet(s) lost (seq {expected_seq} → {seq})")
+                    if args.debug or lost > 0:
+                        print(f"\n[LOSS] {lost} packet(s) lost (seq {expected_seq} → {seq})")
             last_sequence = seq
             
             # Process events
             for key_down, duration_ms in packet['events']:
-                arrival_time = time.time()
-                
                 if jitter_buffer:
                     # Add to jitter buffer for scheduled playout
                     jitter_buffer.add_event(key_down, duration_ms, arrival_time)
+                    
+                    # Debug: show scheduling info
+                    if args.debug:
+                        # Calculate when this will play (relative scheduling)
+                        queue_depth = jitter_buffer.event_queue.qsize()
+                        state_str = "DOWN" if key_down else "UP"
+                        print(f"[DEBUG] {state_str} {duration_ms}ms, arrival_gap={arrival_gap_ms:.1f}ms, queue_depth={queue_depth}")
                 else:
                     # Direct playout (no buffering)
+                    if args.debug:
+                        state_str = "DOWN" if key_down else "UP"
+                        print(f"[DEBUG] {state_str} {duration_ms}ms (immediate playout)")
                     handle_event(key_down, duration_ms)
     
     except KeyboardInterrupt:
