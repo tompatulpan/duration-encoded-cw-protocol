@@ -203,3 +203,4 @@ web_platform_tcp/dist/
 *.js.map
 *.min.js
 *.bundle.js
+USB_HID_old/
