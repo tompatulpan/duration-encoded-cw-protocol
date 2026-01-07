@@ -9,11 +9,12 @@ class AudioHandler {
   constructor() {
     this.audioContext = null;
     this.masterGain = null;
-    this.oscillators = new Map(); // callsign -> {osc, gain}
+    this.oscillators = new Map(); // callsign -> {osc, gain, filter}
     this.enabled = true;
     this.volume = 0.3;
     this.baseFrequency = 700; // Hz
     this.audioUnlocked = false; // Track if user has enabled audio
+    this.filterQ = 10; // Bandpass filter Q factor (narrowness)
     
     this.initAudio();
   }
@@ -97,17 +98,25 @@ class AudioHandler {
     osc.type = 'sine';
     osc.frequency.value = freq;
     
+    // Bandpass filter - reduces harshness and clicks
+    const filter = this.audioContext.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = freq;
+    filter.Q.value = this.filterQ;
+    
     const gain = this.audioContext.createGain();
     gain.gain.value = 0.0; // Start silent
     
-    osc.connect(gain);
+    // Audio chain: oscillator -> filter -> gain -> master
+    osc.connect(filter);
+    filter.connect(gain);
     gain.connect(this.masterGain);
     
     osc.start();
     
-    this.oscillators.set(callsign, { osc, gain, frequency: freq });
+    this.oscillators.set(callsign, { osc, gain, filter, frequency: freq });
     
-    console.log(`[Audio] Created oscillator for ${callsign} at ${freq}Hz`);
+    console.log(`[Audio] Created oscillator for ${callsign} at ${freq}Hz (filtered)`);
   }
   
   /**
@@ -127,7 +136,7 @@ class AudioHandler {
    */
   removeUser(callsign) {
     if (this.oscillators.has(callsign)) {
-      const { osc, gain } = this.oscillators.get(callsign);
+      const { osc, gain, filter } = this.oscillators.get(callsign);
       
       // Fade out
       const now = this.audioContext.currentTime;
@@ -137,6 +146,7 @@ class AudioHandler {
       setTimeout(() => {
         osc.stop();
         osc.disconnect();
+        filter.disconnect();
         gain.disconnect();
         this.oscillators.delete(callsign);
       }, 100);
@@ -160,10 +170,11 @@ class AudioHandler {
    */
   setFrequency(frequency) {
     this.baseFrequency = frequency;
-    
-    // Update existing oscillators
-    this.oscillators.forEach(({ osc }, callsign) => {
+     and filters
+    this.oscillators.forEach(({ osc, filter }, callsign) => {
       const freq = frequency + (this.hashCallsign(callsign) * 50);
+      osc.frequency.value = freq;
+      filter.frequency.value = freq; // Keep filter centered on tonehis.hashCallsign(callsign) * 50);
       osc.frequency.value = freq;
     });
   }
@@ -186,9 +197,10 @@ class AudioHandler {
   /**
    * Clean up
    */
-  destroy() {
-    this.oscillators.forEach(({ osc, gain }) => {
+  destroy() {, filter }) => {
       osc.stop();
+      osc.disconnect();
+      filter.stop();
       osc.disconnect();
       gain.disconnect();
     });

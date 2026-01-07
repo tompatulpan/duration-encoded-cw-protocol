@@ -4,6 +4,8 @@ Sidetone Generator - Audio feedback for CW keying
 """
 
 import threading
+import os
+from ctypes import *
 
 # Audio support (optional)
 try:
@@ -12,6 +14,23 @@ try:
     AUDIO_AVAILABLE = True
 except ImportError:
     AUDIO_AVAILABLE = False
+
+# Suppress ALSA error messages during PyAudio initialization
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+def py_error_handler(filename, line, function, err, fmt):
+    """Suppress ALSA/JACK error messages"""
+    pass
+
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
+def suppress_alsa_messages():
+    """Suppress ALSA error output during device scanning"""
+    try:
+        asound = cdll.LoadLibrary('libasound.so.2')
+        asound.snd_lib_error_set_handler(c_error_handler)
+    except:
+        pass  # Not on Linux or ALSA not available
 
 
 class SidetoneGenerator:
@@ -25,7 +44,31 @@ class SidetoneGenerator:
         if not AUDIO_AVAILABLE:
             return
         
+        # Initialize state BEFORE opening stream (callback needs these!)
+        self.phase = 0.0
+        self.key_down = False
+        self.envelope = 0.0
+        self.target_envelope = 0.0
+        
+        # Envelope shaping to prevent clicks (optimized for CW)
+        self.rise_time = 0.004  # 4ms - fast, clean attack
+        self.fall_time = 0.004  # 4ms - fast, clean release
+        
+        # Simple low-pass filter state for smoother audio
+        self.filter_state = 0.0
+        self.filter_alpha = 0.1  # Low-pass filter coefficient (smoother = lower value)
+        
+        # Pre-calculate constants for callback
+        self.phase_increment = self.frequency / self.sample_rate
+        self.rise_rate = 1.0 / (self.rise_time * self.sample_rate)
+        self.fall_rate = 1.0 / (self.fall_time * self.sample_rate)
+        self.two_pi = 2.0 * np.pi
+        
+        # Now open audio stream (use blocking mode - callback mode has PulseAudio routing issues)
         try:
+            # Suppress ALSA error messages during device scanning
+            suppress_alsa_messages()
+            
             self.audio = pyaudio.PyAudio()
             
             # If no device specified, try pipewire/pulseaudio first
@@ -39,6 +82,7 @@ class SidetoneGenerator:
                         print(f"[AUDIO] Auto-selected device {i}: {info['name']}")
                         break
             
+            # Use blocking mode (write directly) - works better with PulseAudio
             self.stream = self.audio.open(
                 format=pyaudio.paFloat32,
                 channels=1,
@@ -57,34 +101,14 @@ class SidetoneGenerator:
             print(f"[AUDIO ERROR] Failed to open audio stream: {e}")
             raise
         
-        self.phase = 0.0
-        self.key_down = False
-        self.envelope = 0.0
-        self.target_envelope = 0.0
-        
-        # Envelope shaping to prevent clicks (optimized for CW)
-        self.rise_time = 0.004  # 4ms - fast, clean attack
-        self.fall_time = 0.004  # 4ms - fast, clean release
-        
-        # Simple low-pass filter state for smoother audio
-        self.filter_state = 0.0
-        self.filter_alpha = 0.1  # Low-pass filter coefficient (smoother = lower value)
-        
-        # Start audio generation thread
+        # Start audio generation thread (blocking mode)
         self.running = True
-        self.audio_thread = threading.Thread(target=self._audio_loop)
-        self.audio_thread.daemon = True
+        self.audio_thread = threading.Thread(target=self._audio_loop, daemon=True)
         self.audio_thread.start()
     
     def _audio_loop(self):
-        """Audio generation thread with optimized signal generation"""
-        chunk_size = 128  # Match frames_per_buffer for consistency
-        
-        # Pre-calculate constants
-        phase_increment = self.frequency / self.sample_rate
-        rise_rate = 1.0 / (self.rise_time * self.sample_rate)
-        fall_rate = 1.0 / (self.fall_time * self.sample_rate)
-        two_pi = 2.0 * np.pi
+        """Audio generation thread (blocking mode)"""
+        chunk_size = 128
         
         while self.running:
             # Generate audio chunk
@@ -94,35 +118,30 @@ class SidetoneGenerator:
                 # Update target envelope based on key state
                 self.target_envelope = 1.0 if self.key_down else 0.0
                 
-                # Smooth envelope transition (exponential attack/release)
+                # Smooth envelope transition
                 if self.key_down:
-                    # Attack (key down)
-                    self.envelope = min(self.envelope + rise_rate, self.target_envelope)
+                    self.envelope = min(self.envelope + self.rise_rate, self.target_envelope)
                 else:
-                    # Release (key up)
-                    self.envelope = max(self.envelope - fall_rate, self.target_envelope)
+                    self.envelope = max(self.envelope - self.fall_rate, self.target_envelope)
                 
-                # Generate sine wave only when envelope > 0 (CPU optimization)
+                # Generate sine wave
                 if self.envelope > 0.0001:
-                    raw_sample = np.sin(two_pi * self.phase) * self.envelope * self.volume
-                    
-                    # Simple low-pass filter to smooth audio (reduces high-freq artifacts)
+                    raw_sample = np.sin(self.two_pi * self.phase) * self.envelope * self.volume
                     self.filter_state += self.filter_alpha * (raw_sample - self.filter_state)
                     samples[i] = self.filter_state
                     
-                    # Advance phase
-                    self.phase += phase_increment
+                    self.phase += self.phase_increment
                     if self.phase >= 1.0:
                         self.phase -= 1.0
                 else:
                     samples[i] = 0.0
-                    self.filter_state = 0.0  # Reset filter when silent
+                    self.filter_state = 0.0
             
-            # Output audio
+            # Write to stream (blocking but fast)
             try:
-                self.stream.write(samples.tobytes())
+                self.stream.write(samples.tobytes(), exception_on_underflow=False)
             except:
-                pass
+                pass  # Stream closed or error
     
     def set_key(self, key_down):
         """Set key state"""
@@ -141,9 +160,26 @@ class SidetoneGenerator:
         if not AUDIO_AVAILABLE:
             return
         
+        # Stop thread
         self.running = False
-        if hasattr(self, 'audio_thread'):
-            self.audio_thread.join(timeout=1.0)
-        self.stream.stop_stream()
-        self.stream.close()
-        self.audio.terminate()
+        self.key_down = False  # Ensure key is released
+        
+        # Wait briefly for thread to finish
+        if hasattr(self, 'audio_thread') and self.audio_thread.is_alive():
+            self.audio_thread.join(timeout=0.2)
+        
+        # Close stream
+        try:
+            if hasattr(self, 'stream'):
+                if self.stream.is_active():
+                    self.stream.stop_stream()
+                self.stream.close()
+        except Exception as e:
+            pass  # Ignore cleanup errors
+        
+        # Terminate PyAudio
+        try:
+            if hasattr(self, 'audio'):
+                self.audio.terminate()
+        except Exception as e:
+            pass  # Ignore cleanup errors
