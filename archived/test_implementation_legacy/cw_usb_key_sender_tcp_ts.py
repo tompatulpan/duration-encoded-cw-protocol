@@ -27,7 +27,13 @@ import serial.tools.list_ports
 import argparse
 import configparser
 import os
-from cw_protocol_tcp_ts import CWProtocolTCPTimestamp
+
+# Add parent directory to path for modular imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from protocol.tcp_ts import CWProtocolTCPTimestamp
+from audio.sidetone import SidetoneGenerator
+from keyer import IambicKeyerSync
 
 try:
     import pyaudio
@@ -35,163 +41,6 @@ try:
     PYAUDIO_AVAILABLE = True
 except ImportError:
     PYAUDIO_AVAILABLE = False
-
-# Import sidetone from cw_receiver
-try:
-    from cw_receiver import SidetoneGenerator
-except ImportError:
-    SidetoneGenerator = None
-
-
-class IambicKeyer:
-    """Iambic keyer logic (Mode A and Mode B)"""
-    
-    # State constants
-    IDLE = 0
-    DIT = 1
-    DAH = 2
-    
-    def __init__(self, wpm=20, mode='B'):
-        self.mode = mode  # 'A' or 'B'
-        self.set_speed(wpm)
-        
-        # State
-        self.state = self.IDLE
-        self.dit_memory = False
-        self.dah_memory = False
-        
-    def set_speed(self, wpm):
-        """Set keyer speed"""
-        self.wpm = wpm
-        self.dit_duration = 1200 / wpm  # ms
-        self.dah_duration = self.dit_duration * 3
-        self.element_space = self.dit_duration
-        self.char_space = self.dit_duration * 3
-    
-    def update(self, dit_paddle, dah_paddle, send_element_callback):
-        """
-        Main keyer update - call this in a loop
-        
-        Args:
-            dit_paddle: bool - dit paddle currently pressed
-            dah_paddle: bool - dah paddle currently pressed  
-            send_element_callback: function(key_down: bool, duration_ms: float)
-        
-        Returns:
-            bool - True if keyer is active, False if idle
-        """
-        
-        # State: IDLE - waiting for paddle press
-        if self.state == self.IDLE:
-            if dit_paddle:
-                self.dit_memory = False
-                self.dah_memory = False
-                self.state = self.DIT
-                # Send dit
-                send_element_callback(True, self.dit_duration)
-                time.sleep(self.dit_duration / 1000.0)
-                send_element_callback(False, self.element_space)
-                time.sleep(self.element_space / 1000.0)
-                
-                # Check if dah was pressed during dit (Mode B memory)
-                if self.mode == 'B' and dah_paddle:
-                    self.dah_memory = True
-                    
-            elif dah_paddle:
-                self.dit_memory = False
-                self.dah_memory = False
-                self.state = self.DAH
-                # Send dah
-                send_element_callback(True, self.dah_duration)
-                time.sleep(self.dah_duration / 1000.0)
-                send_element_callback(False, self.element_space)
-                time.sleep(self.element_space / 1000.0)
-                
-                # Check if dit was pressed during dah (Mode B memory)
-                if self.mode == 'B' and dit_paddle:
-                    self.dit_memory = True
-            else:
-                return False  # Still idle
-                
-        # State: DIT - just sent a dit
-        elif self.state == self.DIT:
-            # Sample paddles during element space
-            if dit_paddle:
-                self.dit_memory = True
-            if dah_paddle:
-                self.dah_memory = True
-                
-            # Decide what's next
-            if self.dah_memory:
-                self.dah_memory = False
-                self.state = self.DAH
-                # Send dah
-                send_element_callback(True, self.dah_duration)
-                time.sleep(self.dah_duration / 1000.0)
-                send_element_callback(False, self.element_space)
-                time.sleep(self.element_space / 1000.0)
-                
-                # Mode B: Check for dit during dah
-                if self.mode == 'B' and dit_paddle:
-                    self.dit_memory = True
-                    
-            elif self.dit_memory:
-                self.dit_memory = False
-                self.state = self.DIT
-                # Send dit
-                send_element_callback(True, self.dit_duration)
-                time.sleep(self.dit_duration / 1000.0)
-                send_element_callback(False, self.element_space)
-                time.sleep(self.element_space / 1000.0)
-                
-                # Mode B: Check for dah during dit
-                if self.mode == 'B' and dah_paddle:
-                    self.dah_memory = True
-            else:
-                # No memory, return to idle
-                self.state = self.IDLE
-                return False
-                
-        # State: DAH - just sent a dah
-        elif self.state == self.DAH:
-            # Sample paddles during element space
-            if dit_paddle:
-                self.dit_memory = True
-            if dah_paddle:
-                self.dah_memory = True
-                
-            # Decide what's next
-            if self.dit_memory:
-                self.dit_memory = False
-                self.state = self.DIT
-                # Send dit
-                send_element_callback(True, self.dit_duration)
-                time.sleep(self.dit_duration / 1000.0)
-                send_element_callback(False, self.element_space)
-                time.sleep(self.element_space / 1000.0)
-                
-                # Mode B: Check for dah during dit
-                if self.mode == 'B' and dah_paddle:
-                    self.dah_memory = True
-                    
-            elif self.dah_memory:
-                self.dah_memory = False
-                self.state = self.DAH
-                # Send dah
-                send_element_callback(True, self.dah_duration)
-                time.sleep(self.dah_duration / 1000.0)
-                send_element_callback(False, self.element_space)
-                time.sleep(self.element_space / 1000.0)
-                
-                # Mode B: Check for dit during dah
-                if self.mode == 'B' and dit_paddle:
-                    self.dit_memory = True
-            else:
-                # No memory, return to idle
-                self.state = self.IDLE
-                return False
-                
-        return True  # Still active
 
 
 class USBKeySender:
@@ -223,7 +72,7 @@ class USBKeySender:
         # Keyer (for iambic/bug modes)
         if mode in ['iambic-a', 'iambic-b', 'bug']:
             keyer_mode = 'B' if mode == 'iambic-b' else 'A'
-            self.keyer = IambicKeyer(wpm=wpm, mode=keyer_mode)
+            self.keyer = IambicKeyerSync(wpm=wpm, mode=keyer_mode)
         else:
             self.keyer = None
         
