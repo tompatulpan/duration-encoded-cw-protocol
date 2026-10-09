@@ -45,13 +45,19 @@ The project includes multiple implementations optimized for different network co
 - **TCP+Timestamps** - Burst-resistant timing
 - **WebSocket** - Browser-based implementation
 
-See the detailed README files in [`test_implementation/`](test_implementation/) and [`web_platform_tcp/`](web_platform_tcp/) for specific implementations.
+See [VERSIONS.md](VERSIONS.md) for the project version map. Detailed documentation:
+
+- v2 (active, modular): [`apps/`](apps/) - test senders/receivers using the modular structure
+- v1 (legacy, archived): [`versions/v1-legacy/`](versions/v1-legacy/)
+- Web platform (separate repo): [`../web_platform_tcp/`](../web_platform_tcp/)
 
 ---
 
 ## Quick Start
 
-All terminal-based implementation files are in the [`test_implementation/`](test_implementation/) directory.
+The active v2 implementation is the modular structure at the repository root
+(`protocol/`, `buffer/`, `audio/`, `keyer/`, `apps/`). The complete legacy
+implementation with all variants is in [`versions/v1-legacy/`](versions/v1-legacy/).
 
 ### Installation
 
@@ -67,10 +73,28 @@ sudo apt install -y python3-pyaudio python3-serial python3-numpy portaudio19-dev
 sudo usermod -a -G dialout $USER  # For serial port access, then log out/in
 ```
 
-### Basic Usage
+### Basic Usage (v2, modular)
 
 ```bash
-cd test_implementation/
+# Start receiver (terminal 1)
+python3 apps/test_receiver_udp.py --jitter-buffer 50
+
+# Send automated text (terminal 2)
+python3 apps/test_sender_udp.py localhost 20 "CQ CQ CQ DE SM5ABC"
+
+# UDP with timestamps (burst-resistant)
+python3 apps/test_receiver_udp_ts.py --jitter-buffer 150
+python3 apps/test_sender_udp_ts.py localhost 20 "CQ CQ"
+
+# TCP with timestamps (WiFi-optimized)
+python3 apps/test_receiver_tcp_ts.py --jitter-buffer 150
+python3 apps/test_sender_tcp_ts.py localhost 20 "CQ CQ"
+```
+
+### Basic Usage (v1, legacy)
+
+```bash
+cd versions/v1-legacy/
 
 # Start receiver
 python3 cw_receiver.py
@@ -94,7 +118,7 @@ For internet/WAN use, enable the jitter buffer to smooth network timing variatio
 python3 cw_receiver.py --jitter-buffer 100
 
 # For TCP timestamp version (WiFi-optimized)
-python3 cw_receiver_tcp_ts.py --jitter-buffer 150
+python3 apps/test_receiver_tcp_ts.py --jitter-buffer 150
 ```
 
 **Buffer sizing:**
@@ -108,7 +132,7 @@ python3 cw_receiver_tcp_ts.py --jitter-buffer 150
 
 ### Terminal-Based Python Implementation
 
-The [`test_implementation/`](test_implementation/) directory contains a complete Python reference implementation with:
+The [`versions/v1-legacy/`](versions/v1-legacy/) directory contains the complete legacy Python reference implementation with:
 
 - **Multiple protocol variants** (UDP, UDP+timestamps, TCP, TCP+timestamps)
 - **Automated senders** (text-to-CW conversion)
@@ -117,11 +141,11 @@ The [`test_implementation/`](test_implementation/) directory contains a complete
 - **GPIO output** (Raspberry Pi - drive transmitter relays)
 - **Detailed documentation** (protocol specs, tuning guides)
 
-See [test_implementation/README.md](test_implementation/README.md) for complete technical documentation.
+See [versions/v1-legacy/README.md](versions/v1-legacy/README.md) for complete technical documentation.
 
 ### Web Platform Implementation
 
-The [`web_platform_tcp/`](web_platform_tcp/) directory contains an experimental browser-based implementation:
+The [`../web_platform_tcp/`](../web_platform_tcp/) directory (separate project, one level up) contains an experimental browser-based implementation:
 
 - **WebSocket-based** (JSON event protocol)
 - **Multi-user rooms** (practice with multiple operators)
@@ -129,7 +153,7 @@ The [`web_platform_tcp/`](web_platform_tcp/) directory contains an experimental 
 - **Web Audio API** (sidetone generation)
 - **No installation required** (works in any modern browser)
 
-See [web_platform_tcp/README.md](web_platform_tcp/README.md) for web platform details.
+See [../web_platform_tcp/README.md](../web_platform_tcp/README.md) for web platform details.
 
 ---
 
@@ -143,14 +167,14 @@ Here we have a coupleof options.
 
 ### USB HID Physical Key Interface
 
-The **[`USB_HID/`](USB_HID/)** directory contains a production-ready hardware interface:
+The **[`../USB_HID/`](../USB_HID/)** directory (separate project, one level up) contains a production-ready hardware interface:
 
 - **Seeedstudio XIAO SAMD21** microcontroller
 - **USB HID Keyboard protocol** (works on Linux/Windows/macOS)
 **Quick Start:**
 ```bash
 # 1. Upload firmware (Arduino IDE)
-cd USB_HID/xiao_samd21_hid_key/
+cd ../USB_HID/xiao_samd21_hid_key/
 # Open .ino file, select Seeeduino XIAO board, upload
 
 # 2. Wire your paddles
@@ -162,11 +186,11 @@ cd ../
 python3 cw_xiao_hidraw_sender.py <receiver_ip> --wpm 25 --debug
 
 # 4. Run receiver
-cd ../test_implementation/
-python3 cw_receiver_tcp_ts.py --jitter-buffer 150
+cd ../protocol/apps/
+python3 test_receiver_tcp_ts.py --jitter-buffer 150
 ```
 
-**See [USB_HID/README.md](USB_HID/README.md) for complete setup guide, troubleshooting, and technical details.**
+**See [../USB_HID/README.md](../USB_HID/README.md) for complete setup guide, troubleshooting, and technical details.**
 
 ### Vail adapter hardware
 See this - https://vailadapter.com/
@@ -195,7 +219,7 @@ For iambic: Connect dit paddle to CTS, dah paddle to DSR
 For driving physical transmitter keying circuits:
 
 ```bash
-cd test_implementation/
+cd versions/v1-legacy/
 
 # Basic usage (GPIO 17, active-high)
 python3 cw_gpio_output.py
@@ -207,7 +231,7 @@ python3 cw_gpio_output.py --pin 23 --buffer 150
 
 **Hardware connection:** GPIO Pin → Relay/Transistor → Transmitter Key Input
 
-See [test_implementation/README.md](test_implementation/README.md) for complete hardware setup details.
+See [versions/v1-legacy/README.md](versions/v1-legacy/README.md) for complete hardware setup details.
 
 **Note** Serial interfaces can behave porly depending on supported sampling speed!
 
@@ -224,7 +248,7 @@ See [test_implementation/README.md](test_implementation/README.md) for complete 
 
 Complete technical documentation is in the implementation directories:
 
-- **[test_implementation/README.md](test_implementation/README.md)** - Python implementation guide
+- **[versions/v1-legacy/README.md](versions/v1-legacy/README.md)** - Python implementation guide (legacy)
   - Protocol specifications (packet format, timing)
   - Protocol variants (UDP, TCP)
   - Usage examples and command-line options
@@ -232,7 +256,7 @@ Complete technical documentation is in the implementation directories:
   - Hardware setup (GPIO, USB serial)
   - Network performance and testing
   
-- **[web_platform_tcp/README.md](web_platform_tcp/README.md)** - Web platform guide
+- **[../web_platform_tcp/README.md](../web_platform_tcp/README.md)** - Web platform guide
   - WebSocket implementation
   - Browser requirements
   - Deployment instructions

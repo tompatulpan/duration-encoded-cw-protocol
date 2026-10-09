@@ -1,0 +1,11 @@
+# Core (no hard dependencies - all protocol/buffer modules are stdlib-only)
+
+# Audio sidetone (optional - receivers/senders fall back to visual-only mode)
+pyaudio
+numpy
+
+# GPIO output on Raspberry Pi (optional)
+# RPi.GPIO
+
+# Iambic keyer via keyer/ wrapper (optional - requires ../vail-adapter-lib)
+# pip install -e ../vail-adapter-lib
