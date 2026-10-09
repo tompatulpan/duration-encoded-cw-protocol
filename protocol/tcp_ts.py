@@ -66,7 +66,12 @@ class CWProtocolTCPTimestamp(CWProtocolBase):
             
             # Enable TCP keepalive to prevent idle connection drops
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            
+
+            # Disable Nagle's algorithm: keying packets are small and
+            # latency-sensitive; Nagle would hold them waiting for ACKs
+            if hasattr(socket, 'TCP_NODELAY'):
+                self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
             # Platform-specific keepalive tuning (Linux/Unix)
             if hasattr(socket, 'TCP_KEEPIDLE'):
                 self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
