@@ -112,7 +112,8 @@ class CWProtocolUDPTimestamp(CWProtocolBase):
             if self.last_sequence is not None:
                 expected = (self.last_sequence + 1) % 256
                 if sequence != expected:
-                    self.packets_lost += abs(sequence - expected)
+                    # Modulo arithmetic handles 8-bit sequence wraparound
+                    self.packets_lost += (sequence - expected) % 256
             
             self.last_sequence = sequence
             self.packets_received += 1

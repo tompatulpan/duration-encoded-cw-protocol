@@ -155,7 +155,8 @@ class CWProtocolBase:
         Returns: dict with keys: version, sequence, client_id, events
                  events is list of (key_down, duration_ms) tuples
         """
-        if len(packet_bytes) < 4:
+        # Accept 3-byte EOT packets (header only) and 4+ byte data packets
+        if len(packet_bytes) < 3:
             return None
         
         # Parse header

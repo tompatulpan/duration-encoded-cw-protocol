@@ -55,7 +55,8 @@ class CWTimingStats:
             'avg_dit_ms': sum(dits) / len(dits) if dits else 0,
             'avg_dah_ms': sum(dahs) / len(dahs) if dahs else 0,
             'num_dits': len(dits),
-            'num_dahs': len(dahs)
+            'num_dahs': len(dahs),
+            'wpm': (1200 / (sum(dits) / len(dits))) if dits else 0
         }
     
     def print_stats(self):
