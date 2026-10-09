@@ -39,7 +39,9 @@ class CWTimingStats:
         dahs = []
         
         for event in self.events:
-            if not event['key_down']:  # Only count key-down events
+            # Duration of a key-up event is the length of the pressed
+            # element; a key-down event carries the preceding gap instead.
+            if event['key_down']:
                 continue
             
             duration = event['duration_ms']

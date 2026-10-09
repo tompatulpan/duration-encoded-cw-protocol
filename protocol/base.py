@@ -50,7 +50,7 @@ class CWProtocolBase:
             return 0x40 + offset  # 0x40-0x5F
         elif duration_ms <= 384:
             # 8ms resolution: 128-384ms
-            offset = (duration_ms - 128) // 8
+            offset = min((duration_ms - 128) // 8, 31)  # Clamp to 7 bits
             return 0x60 + offset  # 0x60-0x7F
         else:
             # Cap at maximum
