@@ -51,11 +51,9 @@ def main():
     # Playout callback
     def handle_event(key_down, duration_ms):
         """Handle CW event (audio + visual)"""
-        # Protocol: duration = PREVIOUS state duration
-        # Sleep for PREVIOUS state before transitioning
-        if not jitter_buffer and duration_ms > 0:
-            time.sleep(duration_ms / 1000.0)
-        
+        # Unbuffered playout: transition on arrival. The sender already
+        # paces packets in real time, so sleeping the previous duration
+        # here would double-count it and stretch playout ~2x.
         # Now transition to new state
         if sidetone:
             sidetone.set_key(key_down)

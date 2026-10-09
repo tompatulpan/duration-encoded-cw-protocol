@@ -5,6 +5,7 @@ Sidetone Generator - Audio feedback for CW keying
 
 import threading
 import os
+import math
 from ctypes import *
 
 # Audio support (optional)
@@ -126,7 +127,9 @@ class SidetoneGenerator:
                 
                 # Generate sine wave
                 if self.envelope > 0.0001:
-                    raw_sample = np.sin(self.two_pi * self.phase) * self.envelope * self.volume
+                    # math.sin is ~20x faster than numpy scalar np.sin;
+                    # the audio thread must outpace 128 samples / 2.67ms
+                    raw_sample = math.sin(self.two_pi * self.phase) * self.envelope * self.volume
                     self.filter_state += self.filter_alpha * (raw_sample - self.filter_state)
                     samples[i] = self.filter_state
                     
