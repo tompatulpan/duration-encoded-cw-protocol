@@ -8,7 +8,7 @@ is the authoritative map of what lives where and what is still used.
 | Version | Location | Status | Description |
 |---------|----------|--------|-------------|
 | **v1 - Legacy monolithic** | `versions/v1-legacy/` | Archived, reference only | Flat single-file scripts, one file per sender/receiver variant |
-| **v2 - Modular refactor** | `protocol/`, `buffer/`, `audio/`, `keyer/`, `apps/` | Active development (branch `refactor/modular-structure`) | Layered package structure, shared components |
+| **v2 - Modular refactor** | `protocol/`, `buffer/`, `audio/`, `keyer/`, `apps/`, `tests/` | Active development (branch `refactor/modular-structure`) | Layered package structure, shared components |
 
 ## v1 - Legacy monolithic (`versions/v1-legacy/`)
 
@@ -26,7 +26,7 @@ jitter buffer and sidetone logic.
 ## v2 - Modular refactor (repository root)
 
 Layered structure extracted from v1 (branch `refactor/modular-structure`,
-started January 2026):
+started January 2026, migration completed October 2026):
 
 ```
 protocol/   base.py (packet encode/decode, 4-byte header + event bytes)
@@ -35,7 +35,15 @@ buffer/     jitter.py (JitterBuffer - relative and timestamp-based scheduling)
 audio/      sidetone.py (SidetoneGenerator), gpio.py (GPIOKeyer)
 keyer/      wrapper around ../vail-adapter-lib (IambicKeyer, IambicKeyerSync)
 apps/       test senders/receivers for UDP, UDP+TS and TCP+TS
+tests/      loopback_test.py (automated wire-format + loopback harness)
 ```
+
+The migration is complete. The original January 2026 planning documents
+(`MIGRATION_STATUS.md`, `RESTRUCTURE_MIGRATION.md`, `TESTING_RESULTS.md`)
+are parked in `temp/` and superseded by this file. Deliberate deviations
+from the original plan: no duration-based TCP module (only `tcp_ts.py`),
+no `transport/` or `utils/` layers, and no pip packaging - `keyer/` wraps
+`../vail-adapter-lib` via a path shim instead.
 
 Important notes:
 
@@ -68,3 +76,6 @@ you are sure you do not want it:
 | `temp/usb_hid_legacy/` | ~350 KB | Superseded USB_HID copy (active version is `../USB_HID/`) |
 | `temp/experimental_fec_RX/` | 4 KB | Empty leftover directory from removed FEC experiments |
 | `temp/v1-legacy-log.txt` | 36 KB | Debug log found in v1 |
+| `temp/MIGRATION_STATUS.md` | 8 KB | January 2026 migration tracker - closed, see notes above |
+| `temp/RESTRUCTURE_MIGRATION.md` | 16 KB | January 2026 restructuring plan the migration superseded |
+| `temp/TESTING_RESULTS.md` | 8 KB | January 2026 manual test notes - superseded by `tests/loopback_test.py` |
