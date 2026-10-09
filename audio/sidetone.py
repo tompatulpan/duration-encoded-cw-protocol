@@ -4,7 +4,6 @@ Sidetone Generator - Audio feedback for CW keying
 """
 
 import threading
-import os
 import math
 from ctypes import *
 
@@ -157,6 +156,7 @@ class SidetoneGenerator:
     def set_frequency(self, frequency):
         """Set sidetone frequency in Hz"""
         self.frequency = frequency
+        self.phase_increment = frequency / self.sample_rate
     
     def close(self):
         """Cleanup"""

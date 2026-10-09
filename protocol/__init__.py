@@ -12,7 +12,7 @@ Main classes:
 
 For concrete implementations, see:
 - protocol.udp for UDP transport
-- protocol.tcp for TCP transport (duration-based)
+- protocol.udp_ts for UDP transport (timestamp-based)
 - protocol.tcp_ts for TCP transport (timestamp-based)
 """
 

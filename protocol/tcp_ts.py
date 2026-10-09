@@ -7,7 +7,7 @@ import socket
 import struct
 import time
 import threading
-from .base import CWProtocolBase, UDP_PORT
+from .base import CWProtocolBase
 
 # TCP Timestamp uses separate port from duration-based TCP
 TCP_TS_PORT = 7356

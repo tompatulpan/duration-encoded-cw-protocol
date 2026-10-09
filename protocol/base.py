@@ -4,7 +4,6 @@ Base CW Protocol - Abstract base class for all protocol variants
 """
 
 import struct
-import time
 
 # Protocol constants
 PROTOCOL_VERSION = 0x40  # 01 in bits 7-6
@@ -19,8 +18,8 @@ class CWProtocolBase:
     optimized variable-resolution encoding.
     
     This is an abstract base class - use concrete implementations:
-    - CWProtocolUDP for UDP transport
-    - CWProtocolTCP for TCP transport (duration-based)
+    - CWProtocolUDP for UDP transport (duration-based)
+    - CWProtocolUDPTimestamp for UDP transport (timestamp-based)
     - CWProtocolTCPTimestamp for TCP transport (timestamp-based)
     """
     
@@ -121,7 +120,7 @@ class CWProtocolBase:
             event_byte |= 0x80  # Set bit 7 for key-down
         
         # Pack into bytes
-        packet = struct.pack('BBB B', flags, seq, client_id, event_byte)
+        packet = struct.pack('BBBB', flags, seq, client_id, event_byte)
         
         return packet
     
