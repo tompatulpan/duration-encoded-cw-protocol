@@ -136,7 +136,9 @@ class CWProtocolBase:
         # Set Break Request flag (bit 3)
         flags = PROTOCOL_VERSION | 0x08  # Version 01, Break=1
         seq = self.sequence_number & 0xFF
-        self.sequence_number = (self.sequence_number + 1) % 256
+        # Do NOT increment sequence_number: the EOT is not a data packet,
+        # and counting it would desync the receiver's loss tracker by one
+        # for every transmission after the first.
         client_id = self.client_id
         
         # Pack header only (no payload for EOT)

@@ -123,6 +123,13 @@ def main():
         print(f"[CONNECTED] to {args.host}:{args.port}\n")
         
         for rep in range(args.repeat):
+            # The receiver closes the connection after each EOT;
+            # reconnect for every transmission after the first
+            if rep > 0:
+                print("\nReconnecting...")
+                protocol.connect(timeout=5.0)
+                print(f"[CONNECTED] to {args.host}:{args.port}")
+
             if args.repeat > 1:
                 print(f"[{rep+1}/{args.repeat}] Sending: {args.message}")
             else:

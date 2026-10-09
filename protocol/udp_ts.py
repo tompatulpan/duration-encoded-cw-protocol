@@ -144,7 +144,9 @@ class CWProtocolUDPTimestamp(CWProtocolBase):
         eot_packet += timestamp_bytes
         
         self.sock.sendto(eot_packet, dest_addr)
-        self.sequence_number = (self.sequence_number + 1) % 256
+        # Do NOT increment sequence_number: the EOT is not a data packet,
+        # and counting it would desync the receiver's loss tracker by one
+        # for every transmission after the first.
         
         # Reset transmission start for next transmission
         self.transmission_start = None

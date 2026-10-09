@@ -172,11 +172,12 @@ def wait_for(receiver, marker, timeout=15.0):
     return False
 
 
-def expected_events(message):
+def expected_events(message, repeat=1):
     """Per apps/test_sender_*.py: exactly 2 events (DOWN+UP) per element."""
     downs = sum(len(MORSE_CODE[c.upper()]) for c in message
                 if c.upper() in MORSE_CODE)
-    return downs, downs  # DOWN count == UP count
+    total = downs * repeat
+    return total, total  # DOWN count == UP count
 
 
 def parse_loss(text):
@@ -201,10 +202,12 @@ def parse_avg_dit(text):
 
 def run_pair(name, sender_cmd, receiver_cmd, message, wpm, verbose,
              ready_marker="listening", connect_marker=None,
-             check_loss=True):
+             check_loss=True, repeat=1):
     print(f"\n=== Loopback: {name} ===")
-    downs, ups = expected_events(message)
+    downs, ups = expected_events(message, repeat)
     exp_dit = 1200 // wpm
+    if repeat > 1:
+        sender_cmd = sender_cmd + ['--repeat', str(repeat)]
 
     recv = None
     try:
@@ -282,13 +285,16 @@ def main():
 
     unit_tests()
 
+    # repeat=2 exercises inter-transmission state: the EOT must not
+    # desync the receiver's sequence/loss tracking between repetitions,
+    # and TCP must reconnect per transmission (receiver closes on EOT)
     run_pair(
         "UDP",
         [py, 'apps/test_sender_udp.py', '127.0.0.1', str(args.wpm),
          args.message, '--port', str(pb + 5), '--no-sidetone'],
         [py, 'apps/test_receiver_udp.py', '--port', str(pb + 5),
          '--no-audio'],
-        args.message, args.wpm, args.verbose)
+        args.message, args.wpm, args.verbose, repeat=2)
 
     run_pair(
         "UDP-TS",
@@ -296,7 +302,7 @@ def main():
          args.message, '--port', str(pb + 7), '--no-sidetone'],
         [py, 'apps/test_receiver_udp_ts.py', '--port', str(pb + 7),
          '--no-audio', '--jitter-buffer', '150'],
-        args.message, args.wpm, args.verbose)
+        args.message, args.wpm, args.verbose, repeat=2)
 
     run_pair(
         "TCP-TS",
@@ -306,7 +312,7 @@ def main():
          '--no-audio', '--jitter-buffer', '150'],
         args.message, args.wpm, args.verbose,
         ready_marker="Waiting for connection",
-        check_loss=False)
+        check_loss=False, repeat=2)
 
     print("\n" + "=" * 60)
     print(f"RESULTS: {len(PASS)} passed, {len(FAIL)} failed")
