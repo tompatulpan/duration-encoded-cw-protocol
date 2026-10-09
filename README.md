@@ -4,7 +4,7 @@
 
 ## What is DECW?
 
-Duration-Encoded CW (DECW) is a protocol for transmitting Morse code timing information over IP networks (UDP/TCP) intended prio for **remote control**. Unlike text-based approaches, DECW transmits **raw key events with precise timing**, preserving the operator's natural keying rhythm and "fist".
+Duration-Encoded CW (DECW) is a protocol for transmitting Morse code timing information over IP networks (UDP/TCP) intended primarily for **remote control**. Unlike text-based approaches, DECW transmits **raw key events with precise timing**, preserving the operator's natural keying rhythm and "fist".
 
 Each packet contains the **duration** of the event, not just **state changes**. This makes DECW robust against network jitter, as each event is self-contained and can be scheduled independently.
 
@@ -18,16 +18,20 @@ Each packet contains the **duration** of the event, not just **state changes**. 
 
 ### Why "Duration-Encoded"?
 
-Each packet describes a state transition with the duration of the previous state:
+Each packet is a 3-byte header (`[version/flags][sequence][client_id]`) followed
+by one event byte per key event. The event byte packs the new key state plus the
+duration of the previous state:
 
 ```
-[seq=5][UP][180ms] = "Key was DOWN for 180 milliseconds"
+[01][seq=5][id=0x42][UP|180ms] = "Key was DOWN for 180 milliseconds"
 ```
 
 **How it works:**
 - Manual keying: When key changes state, send packet with new state + previous state's duration
 - Example: Press key → starts timer → release key (180ms later) → send `[UP][180ms]`
 - Receiver: Play each state for its specified duration
+- End-of-Transmission (EOT): a header-only packet with the Break flag set, telling the receiver to drain its jitter buffer
+- Durations use variable resolution: 1ms steps up to 63ms, 2ms steps to 126ms, 8ms steps up to a 384ms cap (practical WPM range ~10-60)
 
 **Benefits:**
 - Self-contained packets (no dependency on previous packets)
@@ -37,13 +41,15 @@ Each packet describes a state transition with the duration of the previous state
 
 ### Protocol Variants
 
-The project includes multiple implementations optimized for different network conditions:
+v2 (active, modular) implements three variants:
 
-- **UDP** - Low latency, best for LAN
-- **UDP+Timestamps** - Burst-resistant timing
-- **TCP** - Reliable delivery, better for high jitter
-- **TCP+Timestamps** - Burst-resistant timing
-- **WebSocket** - Browser-based implementation
+- **UDP** - Low latency, best for LAN (`protocol/udp.py`)
+- **UDP+Timestamps** - Burst-resistant timing (`protocol/udp_ts.py`)
+- **TCP+Timestamps** - Reliable delivery, burst-resistant, WiFi-optimized (`protocol/tcp_ts.py`)
+
+v1 (legacy, archived) additionally has duration-based TCP and UDP+TS variants.
+The WebSocket variant lives in the separate web platform project
+([`../web_platform_tcp/`](../web_platform_tcp/)).
 
 See [VERSIONS.md](VERSIONS.md) for the project version map. Detailed documentation:
 
@@ -114,7 +120,11 @@ python3 cw_usb_key_sender.py localhost iambic-b 25 /dev/ttyUSB0
 For internet/WAN use, enable the jitter buffer to smooth network timing variations:
 
 ```bash
-# Recommended for internet use
+# Recommended for internet use (v2)
+python3 apps/test_receiver_udp_ts.py --jitter-buffer 100
+
+# v1 legacy receiver (duration-based UDP)
+cd versions/v1-legacy/
 python3 cw_receiver.py --jitter-buffer 100
 
 # For TCP timestamp version (WiFi-optimized)
@@ -125,6 +135,25 @@ python3 apps/test_receiver_tcp_ts.py --jitter-buffer 150
 - LAN: 0ms (no buffer needed)
 - Good Internet: 50-100ms
 - Poor Internet/WiFi: 150-200ms
+
+---
+
+## Testing
+
+The automated loopback harness (`tests/loopback_test.py`) validates the v2 wire
+format and all three sender/receiver pairs over 127.0.0.1, with no network or
+audio hardware required:
+
+```bash
+python3 tests/loopback_test.py                          # full run
+python3 tests/loopback_test.py --wpm 30 --message "CQ"  # faster run
+python3 tests/loopback_test.py --verbose                 # show all output
+```
+
+It runs unit tests of the packet encode/decode in `protocol/base.py`, then
+loopback tests of each pair (UDP, UDP+TS, TCP-TS) checking event counts, EOT
+handling, packet loss rate and received dit timing - including repeated
+transmissions that exercise EOT resynchronization. Exit code 0 = all pass.
 
 ---
 
@@ -181,9 +210,9 @@ cd ../USB_HID/xiao_samd21_hid_key/
 #    XIAO D2 → Dit paddle → GND
 #    XIAO D1 → Dah paddle → GND
 
-# 3. Run sender
+# 3. Run sender (from ../USB_HID/)
 cd ../
-python3 cw_xiao_hidraw_sender.py <receiver_ip> --wpm 25 --debug
+python3 cw_xiao_sender_tcp_ts.py <receiver_ip> --wpm 25 --debug
 
 # 4. Run receiver
 cd ../protocol/apps/
@@ -266,17 +295,20 @@ Complete technical documentation is in the implementation directories:
 
 ## Project Status & Future Ideas
 
-**Currently implemented:**
-- ✅ 3-byte UDP protocol
-- ✅ TCP variants (duration-based and timestamp-based)
+**Currently implemented (v2, modular):**
+- ✅ UDP, UDP+timestamps and TCP+timestamps protocol variants
 - ✅ Jitter buffer with word space detection
-- ✅ Hardware key support (USB serial)
-- ✅ USB HID paddle interface
-- ✅ Iambic keyer
+- ✅ Automated loopback test harness (wire format + all three pairs)
 - ✅ Audio sidetone
 - ✅ GPIO output (Raspberry Pi)
-- ✅ Real-time CW decoder
-- ✅ Web platform (experimental)
+- ✅ Iambic keyer (via `keyer/` wrapper around `../vail-adapter-lib`)
+
+**Also available (v1 legacy / related projects):**
+- ✅ Duration-based TCP and UDP+TS variants (`versions/v1-legacy/`)
+- ✅ Hardware key support, USB serial (`versions/v1-legacy/`)
+- ✅ USB HID paddle interface (`../USB_HID/`)
+- ✅ Real-time CW decoder (v1, web platform)
+- ✅ Web platform, experimental (`../web_platform_tcp/`)
 
 **Future possibilities:**
 - ESP32 HID variant (TinyUSB issues to resolve)
